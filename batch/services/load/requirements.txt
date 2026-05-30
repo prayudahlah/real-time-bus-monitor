@@ -1,0 +1,4 @@
+polars
+pyarrow
+psycopg2-binary
+sqlalchemy

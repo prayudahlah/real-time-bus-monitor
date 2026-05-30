@@ -1,0 +1,1 @@
+-- DDL postgres-nya taruh sini nanti ya

@@ -1,0 +1,141 @@
+services:
+
+  # ============================================
+  # ZooKeeper — Coordination untuk Kafka
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: stream-zookeeper
+    restart: unless-stopped
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+    volumes:
+      - zkdata:/var/lib/zookeeper/data
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      retries: 10
+      start_period: 15s
+
+  # ============================================
+  # Kafka
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: stream-kafka
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${STREAM_TAILSCALE_IP}:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 10s
+      retries: 15
+      start_period: 30s
+
+  # ============================================
+  # PostgreSQL — Data Statis + Hasil Prediksi
+
+  postgres-stream:
+    image: postgres:15-bookworm
+    container_name: stream-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-stream_data}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  # ============================================
+  # Inference Service — FastAPI (preprocessing + prediksi)
+
+  inference:
+    build:
+      context: ./services/inference
+    container_name: stream-inference
+    restart: unless-stopped
+    ports:
+      - "${INFERENCE_PORT:-8000}:8000"
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+    environment:
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      POSTGRES_HOST: postgres-stream
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-stream_data}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MODEL_STAGE: Production
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+
+  # ============================================
+  # WMATA Fetcher — Fetch GTFS-RT realtime
+
+  wmata-fetcher:
+    build:
+      context: ./services/wmata-fetcher
+    container_name: stream-wmata-fetcher
+    restart: unless-stopped
+    profiles:
+      - nanti
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WMATA_API_KEY: ${WMATA_API_KEY}
+      FETCH_INTERVAL_SEC: 30
+
+  # ============================================
+  # Dashboard - buat sekarang tak buat streamlit, tapi nanti bisa diganti
+
+  dashboard:
+    build:
+      context: ./services/dashboard
+    container_name: stream-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    profiles:
+      - nanti
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-stream
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-stream_data}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+volumes:
+  zkdata:
+  kafkadata:
+  pgdata:

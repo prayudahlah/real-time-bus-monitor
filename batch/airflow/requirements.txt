@@ -1,0 +1,6 @@
+apache-airflow-providers-postgres
+boto3
+mlflow
+polars
+scikit-learn
+psycopg2-binary

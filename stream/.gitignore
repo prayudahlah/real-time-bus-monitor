@@ -1,0 +1,8 @@
+.env
+**/data/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.pkl
+.DS_Store

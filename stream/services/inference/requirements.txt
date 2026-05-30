@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+mlflow
+boto3
+scikit-learn
+polars
+pyarrow
+psycopg2-binary
