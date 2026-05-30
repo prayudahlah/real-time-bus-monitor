@@ -1,5 +1,0 @@
-polars
-pyarrow
-scikit-learn
-mlflow
-boto3

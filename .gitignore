@@ -7,3 +7,9 @@ __pycache__/
 .pytest_cache/
 *.pkl
 .DS_Store
+.python-version
+.venv
+uv.lock
+pyproject.toml
+.ruff_cache
+.idea

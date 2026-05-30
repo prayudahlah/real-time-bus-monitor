@@ -1,6 +1,10 @@
 apache-airflow-providers-postgres
 boto3
 mlflow
+minio
 polars
-scikit-learn
 psycopg2-binary
+pytest
+pytest-mock
+requests
+scikit-learn
