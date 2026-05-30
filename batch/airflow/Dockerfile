@@ -1,6 +1,14 @@
-FROM apache/airflow:2.9.0-python3.11
+FROM apache/airflow:3.2.1
 
-COPY requirements.txt /requirements.txt
-RUN pip install --no-cache-dir -r /requirements.txt
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 USER airflow
+WORKDIR /opt/airflow
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
