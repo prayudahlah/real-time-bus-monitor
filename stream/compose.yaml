@@ -77,6 +77,11 @@ services:
   inference:
     build:
       context: ./services/inference
+    develop:
+      watch:
+        - path: ./services/inference
+          action: sync+restart
+          target: /app
     container_name: stream-inference
     restart: unless-stopped
     ports:
