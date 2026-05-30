@@ -1,36 +1,19 @@
+# IPBD Kelompok 8 - TBP
+<p align="center">
+  Prayuda Afifan Handoyo | L0224008 | Kelas A<br>
+  Meiva Yusnita Amalia W.K. | L0224044 | Kelas A<br> 
+  Infrastruktur dan Platform Big Data
+</p>
+
 # Real-Time Bus Monitor
 
-Prediksi ETA bus WMATA Washington DC — pipeline batch training + real-time inference terdistribusi di dua laptop via Tailscale.
+Pipeline untuk Monitoring Posisi Bus dan Prediksi Keterlambatan Real-Time di Washington D.C.
 
-## Arsitektur (3 Fase)
+## Arsitektur
 
-```
-PHASE 1: BATCH (laptop batch, standalone)
-┌─────────────────────────────────────────┐
-│ PostgreSQL ← data statis + metadata     │
-│ MinIO ← data lake + model artifacts     │
-│ MLflow ← model registry                 │
-│ Airflow ← orchestrator DAG              │
-│  extract → transform → train → load     │
-└─────────────────────────────────────────┘
+![Architecture Diagram](assets/architecture-diagram.gif)
 
-PHASE 2: STREAM (laptop stream, standalone)
-┌─────────────────────────────────────────┐
-│ ZooKeeper + Kafka ← event bus           │
-│ PostgreSQL ← data sink                  │
-│ FastAPI ← inference service             │
-│ (WMATA Fetcher, Dashboard — nanti)      │
-└─────────────────────────────────────────┘
-
-PHASE 3: CDC (integrasi, nanti)
-Batch → Debezium Connect → Kafka (stream) → CDC Consumer → PostgreSQL stream
-```
-
-## Prasyarat
-
-- **Docker** + **Docker Compose** plugin (v2.20+)
-- **Tailscale** terinstall dan kedua laptop dalam satu network
-- Git
+Pipeline dikembangkan dalam 3 fase. Diagram di atas adalah arsitektur target akhir.
 
 ## Setup Awal
 
@@ -47,14 +30,14 @@ cd real-time-bus-monitor
 
 ```bash
 cp batch/.env.example batch/.env
-# Isi: POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD
+# Isi variabel-variabelnya
 ```
 
 **Laptop Stream:**
 
 ```bash
 cp stream/.env.example stream/.env
-# Isi: STREAM_TAILSCALE_IP untuk Kafka advertised listener, POSTGRES_PASSWORD
+# Isi variabel-variabelnya
 ```
 
 ### 3. Start services
@@ -72,7 +55,7 @@ docker compose up -d
 
 ```bash
 cd stream
-docker compose up -d zookeeper kafka postgres-stream inference
+docker compose up -d
 ```
 
 ### 4. Verifikasi
@@ -144,21 +127,3 @@ Kedua laptop terhubung via **Tailscale** (MagicDNS).
 |---|---|---|---|
 | Stream → Batch | MLflow Tracking API | 5000 | Phase 2 |
 | Batch → Stream | Kafka bootstrap server | 9092 | Phase 3 |
-
-Pastikan firewall di kedua laptop mengizinkan traffic Docker ke port-port tersebut.
-
-## Catatan Penting
-
-1. **Startup:** Kedua laptop bisa di-start parallel — tidak ada dependensi antar laptop di Phase 1 & 2.
-
-2. **Phase 3 (CDC) nanti membutuhkan:**
-   - Kafka di stream laptop sudah berjalan
-   - Debezium Connect di batch akan connect ke Kafka stream
-
-3. **First-time setup batch:**
-   - Trigger Airflow DAG sekali manual untuk training model pertama
-   - MLflow UI: set model stage ke `Production`
-
-4. **Hardware requirements:**
-   - Batch: minimal 8 GB RAM (16 GB recommended untuk transform + train)
-   - Stream: minimal 4 GB RAM (8 GB recommended)
