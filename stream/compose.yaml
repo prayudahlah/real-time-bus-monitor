@@ -103,8 +103,6 @@ services:
       context: ./services/wmata-fetcher
     container_name: stream-wmata-fetcher
     restart: unless-stopped
-    profiles:
-      - nanti
     depends_on:
       kafka:
         condition: service_healthy
@@ -123,8 +121,6 @@ services:
     restart: unless-stopped
     ports:
       - "${DASHBOARD_PORT:-8501}:8501"
-    profiles:
-      - nanti
     depends_on:
       postgres-stream:
         condition: service_healthy
