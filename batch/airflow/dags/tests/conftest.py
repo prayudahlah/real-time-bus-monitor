@@ -21,6 +21,8 @@ def env_vars():
         "POSTGRES_DB": "gtfs",
         "POSTGRES_USER": "test",
         "POSTGRES_PASSWORD": "test",
+        "POSTGIS_HOST": "localhost",
+        "POSTGIS_DB": "batch_spatial",
         "MLFLOW_TRACKING_URI": "http://mlflow:5000",
     }.items():
         os.environ.setdefault(k, v)
@@ -35,7 +37,17 @@ def make_parquet_bytes(df: pl.DataFrame) -> bytes:
 @pytest.fixture
 def mock_minio(mocker):
     client = MagicMock()
-    for mod in ["load_routes", "load_stops", "load_trips", "load_stop_times"]:
+    for mod in [
+        "load_routes",
+        "load_stops",
+        "load_trips",
+        "load_stop_times",
+        "load_calendar",
+        "load_calendar_dates",
+        "load_agency",
+        "load_stops_to_postgis",
+        "load_shapes_to_postgis",
+    ]:
         mocker.patch(f"tasks.{mod}.get_minio_client", return_value=client)
     return client
 
@@ -45,6 +57,25 @@ def mock_postgres(mocker):
     cur = MagicMock()
     conn = MagicMock()
     conn.cursor.return_value.__enter__.return_value = cur
-    for mod in ["load_routes", "load_stops", "load_trips", "load_stop_times"]:
+    for mod in [
+        "clear_tables",
+        "load_routes",
+        "load_stops",
+        "load_trips",
+        "load_stop_times",
+        "load_calendar",
+        "load_calendar_dates",
+        "load_agency",
+    ]:
         mocker.patch(f"tasks.{mod}.get_pg_conn", return_value=conn)
+    return conn, cur
+
+
+@pytest.fixture
+def mock_postgis(mocker):
+    cur = MagicMock()
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    for mod in ["load_stops_to_postgis", "load_shapes_to_postgis"]:
+        mocker.patch(f"tasks.{mod}.get_postgis_conn", return_value=conn)
     return conn, cur
