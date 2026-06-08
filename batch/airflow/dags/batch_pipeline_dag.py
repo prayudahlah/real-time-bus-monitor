@@ -5,6 +5,7 @@ from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import TaskGroup
 
 from tasks.extract import main as extract
+from tasks.clear_tables import main as clear_tables
 from tasks.load_routes import main as load_routes
 from tasks.load_stops import main as load_stops
 from tasks.load_trips import main as load_trips
@@ -38,6 +39,11 @@ with DAG(
     extract_task = PythonOperator(
         task_id="extract",
         python_callable=extract,
+    )
+
+    clear_tables_task = PythonOperator(
+        task_id="clear_tables",
+        python_callable=clear_tables,
     )
 
     with TaskGroup(
@@ -112,6 +118,7 @@ with DAG(
 
     (
         extract_task
+        >> clear_tables_task
         >> [load_group, load_postgis_group]
         >> validate_data_task
         >> feature_eng_task
