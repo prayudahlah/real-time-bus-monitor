@@ -65,6 +65,7 @@ def main(**kwargs):
         "calendar.txt",
         "calendar_dates.txt",
         "agency.txt",
+        "shapes.txt",
     ]
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         for fname in files:
