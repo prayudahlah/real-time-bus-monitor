@@ -51,3 +51,12 @@ def get_pg_conn():
         user=os.environ["POSTGRES_USER"],
         password=os.environ["POSTGRES_PASSWORD"],
     )
+
+
+def get_postgis_conn():
+    return psycopg2.connect(
+        host=os.environ["POSTGIS_HOST"],
+        dbname=os.environ["POSTGIS_DB"],
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+    )
