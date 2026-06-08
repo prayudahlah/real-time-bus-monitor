@@ -57,7 +57,15 @@ def main(**kwargs):
     )
     logger.info("Uploaded ZIP → raw-data/%s", zip_path)
 
-    files = ["routes.txt", "stops.txt", "trips.txt", "stop_times.txt"]
+    files = [
+        "routes.txt",
+        "stops.txt",
+        "trips.txt",
+        "stop_times.txt",
+        "calendar.txt",
+        "calendar_dates.txt",
+        "agency.txt",
+    ]
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         for fname in files:
             if fname not in zf.namelist():
