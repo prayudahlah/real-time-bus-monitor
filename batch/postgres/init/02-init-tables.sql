@@ -41,7 +41,32 @@ CREATE INDEX IF NOT EXISTS idx_stop_times_trip_id ON stop_times(trip_id);
 CREATE INDEX IF NOT EXISTS idx_stop_times_stop_id ON stop_times(stop_id);
 CREATE INDEX IF NOT EXISTS idx_trips_route_id ON trips(route_id);
 
-ALTER TABLE routes REPLICA IDENTITY FULL;
-ALTER TABLE stops REPLICA IDENTITY FULL;
-ALTER TABLE trips REPLICA IDENTITY FULL;
-ALTER TABLE stop_times REPLICA IDENTITY FULL;
+CREATE TABLE IF NOT EXISTS calendar (
+    service_id TEXT PRIMARY KEY,
+    monday INTEGER NOT NULL,
+    tuesday INTEGER NOT NULL,
+    wednesday INTEGER NOT NULL,
+    thursday INTEGER NOT NULL,
+    friday INTEGER NOT NULL,
+    saturday INTEGER NOT NULL,
+    sunday INTEGER NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS calendar_dates (
+    service_id TEXT,
+    date TEXT NOT NULL,
+    exception_type INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_calendar_dates_service_id ON calendar_dates(service_id);
+
+CREATE TABLE IF NOT EXISTS agency (
+    agency_id TEXT PRIMARY KEY,
+    agency_name TEXT NOT NULL,
+    agency_url TEXT NOT NULL,
+    agency_timezone TEXT NOT NULL,
+    agency_lang TEXT,
+    agency_phone TEXT
+);

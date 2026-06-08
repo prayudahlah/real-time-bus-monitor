@@ -9,6 +9,9 @@ from tasks.load_routes import main as load_routes
 from tasks.load_stops import main as load_stops
 from tasks.load_trips import main as load_trips
 from tasks.load_stop_times import main as load_stop_times
+from tasks.load_calendar import main as load_calendar
+from tasks.load_calendar_dates import main as load_calendar_dates
+from tasks.load_agency import main as load_agency
 from tasks.feature_eng import main as feature_eng
 from tasks.train import main as train
 from tasks.validate_data import main as validate_data
@@ -58,8 +61,37 @@ with DAG(
             python_callable=load_stop_times,
         )
 
+        load_calendar_task = PythonOperator(
+            task_id="load_calendar",
+            python_callable=load_calendar,
+        )
+
+        load_calendar_dates_task = PythonOperator(
+            task_id="load_calendar_dates",
+            python_callable=load_calendar_dates,
+        )
+
+        load_agency_task = PythonOperator(
+            task_id="load_agency",
+            python_callable=load_agency,
+        )
+
         load_routes_task >> load_trips_task >> load_stop_times_task
         load_stops_task >> load_stop_times_task
+        load_calendar_task >> load_calendar_dates_task
+
+    with TaskGroup(
+        "load_to_postgis", tooltip="Load spatial data into PostGIS"
+    ) as load_postgis_group:
+        load_stops_geom_task = PythonOperator(
+            task_id="load_stops_geom",
+            python_callable=load_stops_to_postgis,
+        )
+
+        load_shapes_task = PythonOperator(
+            task_id="load_shapes",
+            python_callable=load_shapes_to_postgis,
+        )
 
     validate_data_task = PythonOperator(
         task_id="validate_data",
