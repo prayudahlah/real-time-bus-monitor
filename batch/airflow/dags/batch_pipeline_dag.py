@@ -12,6 +12,8 @@ from tasks.load_stop_times import main as load_stop_times
 from tasks.load_calendar import main as load_calendar
 from tasks.load_calendar_dates import main as load_calendar_dates
 from tasks.load_agency import main as load_agency
+from tasks.load_stops_to_postgis import main as load_stops_to_postgis
+from tasks.load_shapes_to_postgis import main as load_shapes_to_postgis
 from tasks.feature_eng import main as feature_eng
 from tasks.train import main as train
 from tasks.validate_data import main as validate_data
@@ -108,4 +110,10 @@ with DAG(
         python_callable=train,
     )
 
-    extract_task >> load_group >> validate_data_task >> feature_eng_task >> train_task
+    (
+        extract_task
+        >> [load_group, load_postgis_group]
+        >> validate_data_task
+        >> feature_eng_task
+        >> train_task
+    )

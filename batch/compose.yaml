@@ -22,6 +22,8 @@ x-airflow-common: &airflow-common
     POSTGRES_DB: ${POSTGRES_DB:-batch_data}
     POSTGRES_USER: ${POSTGRES_USER:-postgres}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGIS_HOST: postgis-batch
+    POSTGIS_DB: batch_spatial
     WMATA_API_KEY: ${WMATA_API_KEY}
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
@@ -29,6 +31,8 @@ x-airflow-common: &airflow-common
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres-batch:
+      condition: service_healthy
+    postgis-batch:
       condition: service_healthy
     minio-init:
       condition: service_completed_successfully
@@ -72,6 +76,28 @@ services:
       - max_wal_senders=5
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  # ============================================
+  # PostGIS — Spatial Data untuk Query Geografis
+
+  postgis-batch:
+    image: postgis/postgis:15-3.4
+    container_name: batch-postgis
+    restart: unless-stopped
+    ports:
+      - "${POSTGIS_PORT:-5433}:5432"
+    volumes:
+      - ./postgis/init:/docker-entrypoint-initdb.d
+      - postgisdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: batch_spatial
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d batch_spatial"]
       interval: 5s
       retries: 10
       start_period: 10s
@@ -214,4 +240,5 @@ services:
         condition: service_completed_successfully
 volumes:
   pgdata:
+  postgisdata:
   minio-data:
