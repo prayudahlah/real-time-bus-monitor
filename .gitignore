@@ -13,3 +13,4 @@ uv.lock
 pyproject.toml
 .ruff_cache
 .idea
+.data
