@@ -1,6 +1,6 @@
 streamlit
 folium
+streamlit-folium
 plotly
 pandas
-psycopg2-binary
-sqlalchemy
+trino
