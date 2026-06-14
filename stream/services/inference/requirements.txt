@@ -1,8 +1,5 @@
-fastapi
-uvicorn
-mlflow
-boto3
-scikit-learn
-polars
-pyarrow
-psycopg2-binary
+fastapi==0.104.1
+uvicorn==0.24.0
+psycopg2-binary==2.9.9
+geopy==2.4.0
+pydantic==2.5.0
