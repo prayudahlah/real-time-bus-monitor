@@ -1,8 +1,4 @@
 services:
-
-  # ============================================
-  # ZooKeeper — Coordination untuk Kafka
-
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: stream-zookeeper
@@ -20,9 +16,6 @@ services:
       retries: 10
       start_period: 15s
 
-  # ============================================
-  # Kafka
-
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: stream-kafka
@@ -38,19 +31,11 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${STREAM_TAILSCALE_IP}:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://${STREAM_TAILSCALE_IP:-kafka}:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "9092"]
-      interval: 10s
-      retries: 15
-      start_period: 30s
-
-  # ============================================
-  # PostgreSQL — Data Statis + Hasil Prediksi
 
   postgres-stream:
     image: postgres:15-bookworm
@@ -71,38 +56,6 @@ services:
       retries: 10
       start_period: 10s
 
-  # ============================================
-  # Inference Service — FastAPI (preprocessing + prediksi)
-
-  inference:
-    build:
-      context: ./services/inference
-    develop:
-      watch:
-        - path: ./services/inference
-          action: sync+restart
-          target: /app
-    container_name: stream-inference
-    restart: unless-stopped
-    ports:
-      - "${INFERENCE_PORT:-8000}:8000"
-    depends_on:
-      postgres-stream:
-        condition: service_healthy
-    environment:
-      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
-      POSTGRES_HOST: postgres-stream
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-stream_data}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      MODEL_STAGE: Production
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-
-  # ============================================
-  # WMATA Fetcher — Fetch GTFS-RT realtime
-
   wmata-fetcher:
     build:
       context: ./services/wmata-fetcher
@@ -110,14 +63,29 @@ services:
     restart: unless-stopped
     depends_on:
       kafka:
-        condition: service_healthy
+        condition: service_started
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WMATA_API_KEY: ${WMATA_API_KEY}
       FETCH_INTERVAL_SEC: 30
 
-  # ============================================
-  # Dashboard - buat sekarang tak buat streamlit, tapi nanti bisa diganti
+  trino:
+    build:
+      context: ./services/trino
+    container_name: stream-trino
+    restart: unless-stopped
+    ports:
+      - "${TRINO_PORT:-8080}:8080"
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      BATCH_PG_USER: ${BATCH_PG_USER:-postgres}
+      BATCH_PG_PASSWORD: ${BATCH_PG_PASSWORD:-postgres}
+      POSTGIS_USER: ${POSTGIS_USER:-postgres}
+      POSTGIS_PASSWORD: ${POSTGIS_PASSWORD:-postgres}
 
   dashboard:
     build:
@@ -129,12 +97,63 @@ services:
     depends_on:
       postgres-stream:
         condition: service_healthy
+      trino:
+        condition: service_started
     environment:
+      TRINO_HOST: trino
+      TRINO_PORT: 8080
+      REFRESH_SEC: 30
+
+  inference-ml:
+    build:
+      context: ./services/inference-ml
+    container_name: stream-inference-ml
+    restart: unless-stopped
+    ports:
+      - "${INFERENCE_ML_PORT:-8002}:8000"
+    depends_on:
+      kafka:
+        condition: service_started
+      postgres-stream:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       POSTGRES_HOST: postgres-stream
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-stream_data}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      MLFLOW_S3_ENDPOINT_URL: http://prayudahlah:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+
+  alert-telegram:
+    build:
+      context: ./services/alert-telegram
+    container_name: stream-alert-telegram
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+
+  # ============================================
+  # Bus Alerts Fetcher (ditambahkan sebagai service terpisah)
+  wmata-alerts-fetcher:
+    build:
+      context: ./services/wmata-alerts-fetcher
+    container_name: stream-wmata-alerts-fetcher
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WMATA_API_KEY: ${WMATA_API_KEY}
 
 volumes:
   zkdata:
