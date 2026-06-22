@@ -41,7 +41,7 @@ def process_alert(alert_data):
         routes = alert_data.get('routes', [])
         route_str = ", ".join(routes) if routes else "N/A"
         msg = (
-            f"📢 <b>WMATA Service Alert</b>\n"
+            f"<b>WMATA Service Alert</b>\n"
             f"<b>{header}</b>\n"
             f"Routes: {route_str}\n"
             f"{desc[:400]}{'...' if len(desc)>400 else ''}\n"
