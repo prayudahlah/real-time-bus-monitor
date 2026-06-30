@@ -6,11 +6,19 @@ import threading
 import psycopg2
 import numpy as np
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
+from prometheus_client import generate_latest
 from pydantic import BaseModel
 from kafka import KafkaConsumer
 
+from fastapi.responses import Response
+from prometheus_client import generate_latest
 from preprocess import load_gtfs_data, compute_features
 from model_loader import load_model, get_model
+from metrics import (
+    PREDICTIONS_TOTAL, ERRORS_TOTAL, LATENCY,
+    KAFKA_MESSAGES, STOPS_LOADED, LAST_PREDICTION,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -38,7 +46,8 @@ class PredictMLRequest(BaseModel):
 @app.on_event("startup")
 def startup():
     logger.info("Inference-ML starting up...")
-    load_gtfs_data(POSTGRES_CONFIG)
+    stops = load_gtfs_data(POSTGRES_CONFIG)
+    STOPS_LOADED.set(stops)
     load_model()
     t = threading.Thread(target=kafka_consumer_loop, daemon=True)
     t.start()
@@ -56,6 +65,7 @@ def kafka_consumer_loop():
             )
             logger.info("Connected to Kafka, consuming bus.raw.vehicle_positions")
             for msg in consumer:
+                KAFKA_MESSAGES.inc()
                 process_bus_position(msg.value)
         except Exception as e:
             logger.warning(f"Kafka consumer error: {e}, retrying in 5s...")
@@ -77,6 +87,7 @@ def process_bus_position(data):
         model = get_model()
         if model is None:
             return
+        t0 = time.time()
         result = compute_features(lat, lon, trip_id, timestamp)
         if result is None:
             return
@@ -86,8 +97,12 @@ def process_bus_position(data):
                         features['hour_of_day'],
                         features['stop_position_pct']]])
         pred = float(model.predict(X)[0])
+        LATENCY.observe(time.time() - t0)
+        PREDICTIONS_TOTAL.labels(route_id=route_id or "unknown").inc()
+        LAST_PREDICTION.set(time.time())
         _log_to_db(data, features, meta, pred)
     except Exception as e:
+        ERRORS_TOTAL.labels(error_type="process").inc()
         logger.error(f"Process bus error: {e}")
 
 def _log_to_db(data, features, meta, prediction):
@@ -120,11 +135,16 @@ def health():
         "model_loaded": get_model() is not None,
     }
 
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type="text/plain")
+
 @app.post("/predict-ml")
 def predict_ml(req: PredictMLRequest):
     if get_model() is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     ts = req.timestamp if req.timestamp else int(time.time())
+    t0 = time.time()
     result = compute_features(req.lat, req.lon, req.trip_id, ts)
     if result is None:
         raise HTTPException(status_code=400, detail="Feature computation failed")
@@ -134,6 +154,9 @@ def predict_ml(req: PredictMLRequest):
                     features['hour_of_day'],
                     features['stop_position_pct']]])
     pred = float(get_model().predict(X)[0])
+    LATENCY.observe(time.time() - t0)
+    PREDICTIONS_TOTAL.labels(route_id=req.route_id or "unknown").inc()
+    LAST_PREDICTION.set(time.time())
     return {
         "bus_id": req.bus_id,
         "route_id": req.route_id,
