@@ -25,6 +25,9 @@ x-airflow-common: &airflow-common
     POSTGIS_HOST: postgis-batch
     POSTGIS_DB: batch_spatial
     WMATA_API_KEY: ${WMATA_API_KEY}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    TELEGRAM_PIPELINE_TOPIC_ID: ${TELEGRAM_PIPELINE_TOPIC_ID}
   volumes:
     - ./airflow/dags:/opt/airflow/dags:ro
     - ./airflow/logs:/opt/airflow/logs
@@ -138,7 +141,6 @@ services:
       mc alias set minio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD};
       mc mb minio/raw-data --ignore-existing;
       mc mb minio/features --ignore-existing;
-      mc mb minio/models --ignore-existing;
       mc mb minio/mlflow --ignore-existing;
       echo 'Buckets created successfully';
       "
@@ -238,6 +240,44 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
+
+  # ============================================
+  # Monitoring — Prometheus
+  prometheus:
+    image: prom/prometheus
+    container_name: batch-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # ============================================
+  # Monitoring — cAdvisor
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: batch-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8082}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+
+  # ============================================
+  # Monitoring — Postgres Exporter Batch
+  postgres-exporter-batch:
+    image: prometheuscommunity/postgres-exporter
+    container_name: batch-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-batch:5432/batch_data?sslmode=disable
+    depends_on:
+      postgres-batch:
+        condition: service_healthy
 volumes:
   pgdata:
   postgisdata:
