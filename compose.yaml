@@ -1,0 +1,507 @@
+x-airflow-common: &airflow-common
+  build:
+    context: ./batch/airflow
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Jakarta
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-batch:5432/airflow
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
+    AIRFLOW__API_AUTH__JWT_ISSUER: airflow
+
+    MINIO_ENDPOINT: http://minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+    MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    POSTGRES_HOST: postgres-batch
+    POSTGRES_DB: ${POSTGRES_DB:-batch_data}
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGIS_HOST: postgis-batch
+    POSTGIS_DB: batch_spatial
+    WMATA_API_KEY: ${WMATA_API_KEY}
+    TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+    TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    TELEGRAM_PIPELINE_TOPIC_ID: ${TELEGRAM_PIPELINE_TOPIC_ID}
+  volumes:
+    - ./batch/airflow/dags:/opt/airflow/dags:ro
+    - ./batch/airflow/logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres-batch:
+      condition: service_healthy
+    postgis-batch:
+      condition: service_healthy
+    minio-init:
+      condition: service_completed_successfully
+  develop:
+    watch:
+      - action: rebuild
+        path: ./batch/airflow/requirements.txt
+      - action: rebuild
+        path: ./batch/airflow/Dockerfile
+      - action: sync
+        path: ./batch/airflow/dags
+        target: /opt/airflow/dags
+        ignore:
+          - __pycache__/
+          - "*.pyc"
+
+services:
+
+  # ============================================
+  # PostgreSQL — Batch Relational Data
+  postgres-batch:
+    image: postgres:15-bookworm
+    container_name: batch-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./batch/postgres/init:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-batch_data}
+    command:
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=5
+      - -c
+      - max_wal_senders=5
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d batch_data"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  # ============================================
+  # PostgreSQL — Stream Operational Data
+  postgres-stream:
+    image: postgres:15-bookworm
+    container_name: stream-postgres
+    restart: unless-stopped
+    ports:
+      - "${STREAM_PG_PORT:-5434}:5432"
+    volumes:
+      - ./stream/postgres/init:/docker-entrypoint-initdb.d
+      - pgdata-stream:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: stream_data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d stream_data"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  # ============================================
+  # PostGIS — Spatial Data
+  postgis-batch:
+    image: postgis/postgis:15-3.4
+    container_name: batch-postgis
+    restart: unless-stopped
+    ports:
+      - "${POSTGIS_PORT:-5433}:5432"
+    volumes:
+      - ./batch/postgis/init:/docker-entrypoint-initdb.d
+      - postgisdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: batch_spatial
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d batch_spatial"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  # ============================================
+  # MinIO — Data Lake & Model Registry
+  minio:
+    image: minio/minio
+    container_name: batch-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc
+    container_name: batch-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set minio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD};
+      mc mb minio/raw-data --ignore-existing;
+      mc mb minio/features --ignore-existing;
+      mc mb minio/mlflow --ignore-existing;
+      echo 'Buckets created successfully';
+      "
+    restart: on-failure:5
+
+  # ============================================
+  # MLflow
+  mlflow:
+    build:
+      context: ./batch/mlflow
+    container_name: batch-mlflow
+    restart: unless-stopped
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    depends_on:
+      postgres-batch:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_TRACKING_URI: http://0.0.0.0:5000
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*"
+      BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-batch:5432/mlflow
+      ARTIFACT_ROOT: s3://mlflow/
+
+  # ============================================
+  # Airflow
+  airflow-init:
+    build:
+      context: ./batch/airflow
+    container_name: batch-airflow-init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-batch:5432/airflow
+      _AIRFLOW_DB_MIGRATE: "true"
+    command: version
+    user: "${AIRFLOW_UID:-50000}:0"
+    restart: on-failure
+    depends_on:
+      postgres-batch:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  airflow-api-server:
+    <<: *airflow-common
+    container_name: batch-airflow-api-server
+    command: api-server
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: batch-airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: batch-airflow-triggerer
+    command: triggerer
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: batch-airflow-dag-processor
+    command: dag-processor
+    restart: unless-stopped
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ============================================
+  # ZooKeeper — Kafka Coordination
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: stream-zookeeper
+    restart: unless-stopped
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+    volumes:
+      - zkdata:/var/lib/zookeeper/data
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      retries: 10
+      start_period: 15s
+
+  # ============================================
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: stream-kafka
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 10s
+      retries: 15
+      start_period: 30s
+
+  # ============================================
+  # WMATA Fetcher — GTFS-RT Kafka Producer
+  wmata-fetcher:
+    build:
+      context: ./stream/services/wmata-fetcher
+    container_name: stream-wmata-fetcher
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WMATA_API_KEY: ${WMATA_API_KEY}
+      FETCH_INTERVAL_SEC: 30
+
+  # ============================================
+  # Dashboard — Streamlit
+  dashboard:
+    build:
+      context: ./stream/services/dashboard
+    container_name: stream-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-8501}:8501"
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+      trino:
+        condition: service_started
+    environment:
+      TRINO_HOST: trino
+      TRINO_PORT: 8080
+      REFRESH_SEC: 30
+
+  # ============================================
+  # Trino — Federated Query Engine
+  trino:
+    build:
+      context: ./stream/services/trino
+    container_name: stream-trino
+    restart: unless-stopped
+    ports:
+      - "${TRINO_PORT:-8081}:8080"
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+      postgres-batch:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      BATCH_PG_USER: ${POSTGRES_USER:-postgres}
+      BATCH_PG_PASSWORD: ${POSTGRES_PASSWORD}
+      BATCH_PG_HOST: postgres-batch
+      BATCH_PG_PORT: "5432"
+      POSTGIS_USER: ${POSTGRES_USER:-postgres}
+      POSTGIS_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGIS_HOST: postgis-batch
+      POSTGIS_PORT: "5432"
+
+  # ============================================
+  # Inference ML — ML Model Prediction Service
+  inference-ml:
+    build:
+      context: ./stream/services/inference-ml
+    container_name: stream-inference-ml
+    restart: unless-stopped
+    ports:
+      - "${INFERENCE_ML_PORT:-8002}:8000"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres-stream:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      POSTGRES_HOST: postgres-stream
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: stream_data
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+
+  # ============================================
+  # Alert Telegram — Bus Alerts Notifier
+  alert-telegram:
+    build:
+      context: ./stream/services/alert-telegram
+    container_name: stream-alert-telegram
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_BUS_TOPIC_ID: ${TELEGRAM_BUS_TOPIC_ID}
+
+  # ============================================
+  # WMATA Alerts Fetcher
+  wmata-alerts-fetcher:
+    build:
+      context: ./stream/services/wmata-alerts-fetcher
+    container_name: stream-wmata-alerts-fetcher
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WMATA_API_KEY: ${WMATA_API_KEY}
+
+  # ============================================
+  # Monitoring — Prometheus
+  prometheus:
+    image: prom/prometheus
+    container_name: batch-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # ============================================
+  # Monitoring — Grafana
+  grafana:
+    image: grafana/grafana
+    container_name: batch-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/alerting:/etc/grafana/provisioning/alerting:ro
+  # ============================================
+  # Monitoring — cAdvisor
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: batch-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8082}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+
+  # ============================================
+  # Monitoring — Postgres Exporter Batch
+  postgres-exporter-batch:
+    image: prometheuscommunity/postgres-exporter
+    container_name: batch-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-batch:5432/batch_data?sslmode=disable
+    depends_on:
+      postgres-batch:
+        condition: service_healthy
+
+  # ============================================
+  # Monitoring — Postgres Exporter Stream
+  postgres-exporter-stream:
+    image: prometheuscommunity/postgres-exporter
+    container_name: stream-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-stream:5432/stream_data?sslmode=disable
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+
+  # ============================================
+  # Monitoring — Kafka Exporter
+  kafka-exporter:
+    image: danielqsj/kafka-exporter
+    container_name: stream-kafka-exporter
+    restart: unless-stopped
+    command: ["--kafka.server=kafka:9092"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ============================================
+  # Alert Proxy — Grafana Webhook → Telegram
+  alert-proxy:
+    build:
+      context: ./stream/services/alert-proxy
+    container_name: batch-alert-proxy
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
+
+volumes:
+  pgdata:
+  pgdata-stream:
+  postgisdata:
+  minio-data:
+  zkdata:
+  kafkadata:
