@@ -35,9 +35,13 @@ def load_gtfs_data(db_config):
             })
         trips_cache = dict(trips_data)
         conn.close()
-        logger.info(f"Loaded {len(stops_cache)} stops, {len(trips_cache)} trips")
+        stop_count = len(stops_cache)
+        trip_count = len(trips_cache)
+        logger.info(f"Loaded {stop_count} stops, {trip_count} trips")
+        return stop_count
     except Exception as e:
         logger.error(f"Failed to load GTFS data: {e}")
+        return 0
 
 def find_nearest_stop(lat, lon):
     best_id = None

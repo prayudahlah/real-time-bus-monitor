@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY *.py .
+COPY app.py model_loader.py preprocess.py metrics.py ./
 
 EXPOSE 8000
 

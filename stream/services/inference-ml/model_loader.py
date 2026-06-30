@@ -5,6 +5,8 @@ import threading
 import mlflow
 import mlflow.sklearn
 
+from metrics import MODEL_LOADED
+
 logger = logging.getLogger(__name__)
 
 _model = None
@@ -17,16 +19,21 @@ def _load_model_async():
         return
     mlflow.set_tracking_uri(tracking_uri)
     model_uri = "models:/bus_travel_time_predictor@champion"
-    for attempt in range(10):
+    attempt = 0
+    while True:
+        attempt += 1
         try:
-            logger.info(f"Loading model from {model_uri} (attempt {attempt+1})")
+            logger.info(f"Loading model from {model_uri} (attempt {attempt})")
             _model = mlflow.sklearn.load_model(model_uri)
-            logger.info(f"Model loaded: {type(_model).__name__}")
-            return
+            model_type = type(_model).__name__
+            MODEL_LOADED.labels(model_type=model_type).set(1)
+            logger.info(f"Model loaded: {model_type}")
+            break
         except Exception as e:
-            logger.warning(f"Model load attempt {attempt+1} failed: {e}")
-            time.sleep(10)
-    logger.error("Failed to load model after 10 attempts")
+            logger.warning(f"Model load attempt {attempt} failed: {e}")
+            if attempt % 10 == 0:
+                logger.info("Retrying every 60s...")
+            time.sleep(60)
 
 def load_model():
     t = threading.Thread(target=_load_model_async, daemon=True)
