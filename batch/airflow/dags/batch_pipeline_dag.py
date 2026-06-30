@@ -1,5 +1,7 @@
+import os
 from datetime import datetime, timedelta
 
+import requests
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.sdk import TaskGroup
@@ -19,12 +21,58 @@ from tasks.feature_eng import main as feature_eng
 from tasks.train import main as train
 from tasks.validate_data import main as validate_data
 
+def _send_telegram(context, status, icon):
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    topic_id = os.environ.get("TELEGRAM_PIPELINE_TOPIC_ID")
+    if not bot_token or not chat_id:
+        return
+
+    dag_id = context["dag"].dag_id
+    task_id = context["task"].task_id
+    run_id = context["run_id"]
+    log_url = context["task_instance"].log_url
+
+    text = (
+        f"{icon} Pipeline {status}\n"
+        f"DAG: {dag_id}\n"
+        f"Task: {task_id}\n"
+        f"Run: {run_id}\n"
+        f"Log: {log_url}"
+    )
+    exception = context.get("exception")
+    if exception:
+        text += f"\nError: {str(exception)[:200]}"
+
+    payload = {"chat_id": chat_id, "text": text}
+    if topic_id:
+        payload["message_thread_id"] = int(topic_id)
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json=payload,
+            timeout=5,
+        )
+    except Exception:
+        pass
+
+
+def _send_telegram_alert(context):
+    _send_telegram(context, "Gagal", "\u274c")
+
+
+def _send_telegram_success(context):
+    _send_telegram(context, "Berhasil", "\u2705")
+
+
 default_args = {
     "owner": "ipbd",
     "depends_on_past": False,
     "email_on_failure": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
+    "on_failure_callback": _send_telegram_alert,
+    "on_success_callback": _send_telegram_success,
 }
 
 with DAG(
