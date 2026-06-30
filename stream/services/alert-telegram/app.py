@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_BUS_TOPIC_ID = int(os.getenv("TELEGRAM_BUS_TOPIC_ID", "0"))
 
 def send_telegram(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -22,6 +23,8 @@ def send_telegram(text):
         "text": text,
         "parse_mode": "HTML"
     }
+    if TELEGRAM_BUS_TOPIC_ID:
+        payload["message_thread_id"] = TELEGRAM_BUS_TOPIC_ID
     try:
         r = requests.post(url, json=payload, timeout=5)
         if r.status_code != 200:

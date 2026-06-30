@@ -84,8 +84,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       BATCH_PG_USER: ${BATCH_PG_USER:-postgres}
       BATCH_PG_PASSWORD: ${BATCH_PG_PASSWORD:-postgres}
+      BATCH_PG_HOST: ${BATCH_PG_HOST:-prayudahlah}
+      BATCH_PG_PORT: ${BATCH_PG_PORT:-5432}
       POSTGIS_USER: ${POSTGIS_USER:-postgres}
       POSTGIS_PASSWORD: ${POSTGIS_PASSWORD:-postgres}
+      POSTGIS_HOST: ${POSTGIS_HOST:-prayudahlah}
+      POSTGIS_PORT: ${POSTGIS_PORT:-5433}
 
   dashboard:
     build:
@@ -123,7 +127,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-stream_data}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://prayudahlah:5000}
       MLFLOW_S3_ENDPOINT_URL: http://prayudahlah:9000
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
@@ -140,6 +144,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_BUS_TOPIC_ID: ${TELEGRAM_BUS_TOPIC_ID}
 
   # ============================================
   # Bus Alerts Fetcher (ditambahkan sebagai service terpisah)
@@ -154,6 +159,71 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WMATA_API_KEY: ${WMATA_API_KEY}
+
+  # ============================================
+  # Monitoring — Prometheus
+  prometheus:
+    image: prom/prometheus
+    container_name: stream-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  # ============================================
+  # Monitoring — Grafana
+  grafana:
+    image: grafana/grafana
+    container_name: stream-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/alerting:/etc/grafana/provisioning/alerting:ro
+  # ============================================
+  # Monitoring — cAdvisor
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: stream-cadvisor
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8082}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+
+  # ============================================
+  # Monitoring — Postgres Exporter Stream
+  postgres-exporter-stream:
+    image: prometheuscommunity/postgres-exporter
+    container_name: stream-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres-stream:5432/stream_data?sslmode=disable
+    depends_on:
+      postgres-stream:
+        condition: service_healthy
+
+  # ============================================
+  # Monitoring — Kafka Exporter
+  kafka-exporter:
+    image: danielqsj/kafka-exporter
+    container_name: stream-kafka-exporter
+    restart: unless-stopped
+    command: ["--kafka.server=kafka:9092"]
+    depends_on:
+      kafka:
+        condition: service_started
 
 volumes:
   zkdata:
