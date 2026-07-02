@@ -106,6 +106,21 @@ services:
       start_period: 10s
 
   # ============================================
+  # Soda Exporter — Data Quality Prometheus Metrics
+  soda-exporter:
+    build:
+      context: ../stream/services/soda-exporter
+    container_name: batch-soda-exporter
+    restart: unless-stopped
+    ports:
+      - "${SODA_EXPORTER_PORT:-8003}:8000"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      POLL_INTERVAL: "60"
+
+  # ============================================
   # MinIO — Data Lake & Model Registry
 
   minio:
@@ -142,6 +157,7 @@ services:
       mc mb minio/raw-data --ignore-existing;
       mc mb minio/features --ignore-existing;
       mc mb minio/mlflow --ignore-existing;
+      mc mb minio/soda-reports --ignore-existing;
       echo 'Buckets created successfully';
       "
     restart: on-failure:5
