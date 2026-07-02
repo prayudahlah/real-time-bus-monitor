@@ -157,6 +157,7 @@ services:
       mc mb minio/raw-data --ignore-existing;
       mc mb minio/features --ignore-existing;
       mc mb minio/mlflow --ignore-existing;
+      mc mb minio/soda-reports --ignore-existing;
       echo 'Buckets created successfully';
       "
     restart: on-failure:5
@@ -274,6 +275,7 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
+    command: ["bash", "-c", "rm -f /var/lib/kafka/data/meta.properties && exec /etc/confluent/docker/run"]
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -487,6 +489,21 @@ services:
         condition: service_healthy
 
   # ============================================
+  # Soda Exporter — Data Quality Prometheus Metrics
+  soda-exporter:
+    build:
+      context: ./stream/services/soda-exporter
+    container_name: stream-soda-exporter
+    restart: unless-stopped
+    ports:
+      - "${SODA_EXPORTER_PORT:-8003}:8000"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      POLL_INTERVAL: "60"
+
+  # ============================================
   # Alert Proxy — Grafana Webhook → Telegram
   alert-proxy:
     build:
@@ -498,6 +515,28 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
 
+  # ============================================
+  # Loki — Central Logging
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: batch-loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./config/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yml
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: batch-promtail
+    restart: unless-stopped
+    volumes:
+      - ./config/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+
 volumes:
   pgdata:
   pgdata-stream:
@@ -505,3 +544,4 @@ volumes:
   minio-data:
   zkdata:
   kafkadata:
+  loki-data:
