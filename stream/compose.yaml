@@ -85,11 +85,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       BATCH_PG_USER: ${BATCH_PG_USER:-postgres}
       BATCH_PG_PASSWORD: ${BATCH_PG_PASSWORD:-postgres}
-      BATCH_PG_HOST: ${BATCH_PG_HOST:-prayudahlah}
+      BATCH_PG_HOST: ${BATCH_PG_HOST:-${BATCH_TAILSCALE_IP:-prayudahlah}}
       BATCH_PG_PORT: ${BATCH_PG_PORT:-5432}
       POSTGIS_USER: ${POSTGIS_USER:-postgres}
       POSTGIS_PASSWORD: ${POSTGIS_PASSWORD:-postgres}
-      POSTGIS_HOST: ${POSTGIS_HOST:-prayudahlah}
+      POSTGIS_HOST: ${POSTGIS_HOST:-${BATCH_TAILSCALE_IP:-prayudahlah}}
       POSTGIS_PORT: ${POSTGIS_PORT:-5433}
 
   dashboard:
@@ -128,8 +128,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-stream_data}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://prayudahlah:5000}
-      MLFLOW_S3_ENDPOINT_URL: http://prayudahlah:9000
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://${BATCH_TAILSCALE_IP:-prayudahlah}:5000}
+      MLFLOW_S3_ENDPOINT_URL: http://${BATCH_TAILSCALE_IP:-prayudahlah}:9000
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
 
