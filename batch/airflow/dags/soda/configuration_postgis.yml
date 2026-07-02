@@ -1,0 +1,9 @@
+data_source batch_spatial:
+  type: postgres
+  connection:
+    host: ${POSTGIS_HOST}
+    port: "5432"
+    database: ${POSTGIS_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    schema: public
