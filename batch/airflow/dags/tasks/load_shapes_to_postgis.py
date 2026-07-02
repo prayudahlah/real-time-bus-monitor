@@ -73,3 +73,4 @@ def main(**kwargs):
     conn.close()
 
     logger.info("Loaded shapes into PostGIS")
+

@@ -58,3 +58,4 @@ def main(**kwargs):
     conn.close()
 
     logger.info("Loaded %s rows into calendar", f"{len(df):,}")
+
