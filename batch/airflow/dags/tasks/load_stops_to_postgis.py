@@ -64,3 +64,4 @@ def main(**kwargs):
     conn.close()
 
     logger.info("Loaded %s stops into PostGIS", f"{len(df):,}")
+

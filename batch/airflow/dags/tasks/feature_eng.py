@@ -134,3 +134,4 @@ def main(**kwargs):
     logger.info("Features: %s", FEATURE_COLS)
 
     _upload_to_minio(run_id, df_out)
+

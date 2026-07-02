@@ -54,3 +54,4 @@ def main(**kwargs):
     conn.close()
 
     logger.info("Loaded %s rows into agency", f"{len(df):,}")
+
