@@ -147,6 +147,17 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_BUS_TOPIC_ID: ${TELEGRAM_BUS_TOPIC_ID}
 
+  alert-proxy:
+    build:
+      context: ./services/alert-proxy
+    container_name: stream-alert-proxy
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
+      TELEGRAM_DQ_TOPIC_ID: ${TELEGRAM_DQ_TOPIC_ID}
+
   # ============================================
   # Bus Alerts Fetcher (ditambahkan sebagai service terpisah)
   wmata-alerts-fetcher:
