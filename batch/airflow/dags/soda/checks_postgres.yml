@@ -1,0 +1,59 @@
+checks for stops:
+  - row_count > 7000
+  - missing_count(stop_id) = 0
+  - missing_count(stop_name) = 0
+  - missing_count(stop_lat) = 0
+  - missing_count(stop_lon) = 0
+  - duplicate_count(stop_id) = 0
+  - invalid_count(stop_lat) = 0:
+      valid min: 38.0
+      valid max: 40.0
+  - invalid_count(stop_lon) = 0:
+      valid min: -78.0
+      valid max: -76.0
+
+checks for routes:
+  - row_count > 50
+  - missing_count(route_id) = 0
+  - missing_count(route_short_name) = 0
+  - duplicate_count(route_id) = 0
+
+checks for trips:
+  - row_count > 10000
+  - missing_count(trip_id) = 0
+  - missing_count(route_id) = 0
+  - missing_count(service_id) = 0
+  - duplicate_count(trip_id) = 0
+
+checks for stop_times:
+  - row_count > 500000
+  - missing_count(trip_id) = 0
+  - missing_count(stop_id) = 0
+  - missing_count(arrival_time) = 0
+  - missing_count(departure_time) = 0
+  - missing_count(stop_sequence) = 0
+
+checks for calendar:
+  - row_count > 10
+  - missing_count(service_id) = 0
+  - duplicate_count(service_id) = 0
+  - invalid_count(monday) = 0:
+      valid min: 0
+      valid max: 1
+  - invalid_count(sunday) = 0:
+      valid min: 0
+      valid max: 1
+
+checks for calendar_dates:
+  - row_count > 50
+  - missing_count(service_id) = 0
+  - missing_count(date) = 0
+  - missing_count(exception_type) = 0
+  - invalid_count(exception_type) = 0:
+      valid values: [1, 2]
+
+checks for agency:
+  - row_count > 0
+  - missing_count(agency_id) = 0
+  - missing_count(agency_name) = 0
+  - duplicate_count(agency_id) = 0

@@ -24,3 +24,8 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["inference-ml:8000"]
+
+  - job_name: soda-exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["soda-exporter:8000"]
