@@ -27,6 +27,7 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
+    command: ["bash", "-c", "rm -f /var/lib/kafka/data/meta.properties && exec /etc/confluent/docker/run"]
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
