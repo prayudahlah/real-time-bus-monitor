@@ -1,0 +1,325 @@
+{
+  "title": "Central Logging",
+  "uid": "central-logging",
+  "tags": ["logging", "loki"],
+  "schemaVersion": 39,
+  "version": 4,
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "Loki" },
+        "query": "label_values(service)",
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total Log Lines",
+      "type": "stat",
+      "description": "Total log lines from all services in selected time range",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{
+        "expr": "count_over_time({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} [$__range])",
+        "legendFormat": "",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "sparkline",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 2,
+      "title": "Errors",
+      "type": "stat",
+      "description": "Lines matching error/exception/fail — turns red if > 0",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{
+        "expr": "count_over_time({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} |~ `(?i)(error|exception|fail)` [$__range])",
+        "legendFormat": "",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "sparkline",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "Warnings",
+      "type": "stat",
+      "description": "Lines matching warn — turns orange if > 0",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [{
+        "expr": "count_over_time({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} |~ `(?i)warn` [$__range])",
+        "legendFormat": "",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green" },
+              { "value": 1, "color": "orange" }
+            ]
+          },
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "sparkline",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Active Log Streams",
+      "type": "stat",
+      "description": "Number of log streams that produced logs in the last 5 minutes",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{
+        "expr": "count(rate({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} [5m])) or vector(0)",
+        "legendFormat": "",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "unit": "none",
+          "decimals": 0
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "sparkline",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 5,
+      "title": "Log Rate (1m)",
+      "type": "timeseries",
+      "description": "Log lines per second by service — stacked view",
+      "gridPos": { "h": 8, "w": 14, "x": 0, "y": 4 },
+      "targets": [{
+        "expr": "sum by(service) (rate({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} | label_format service=\"{{Replace .service \\\"batch-\\\" \\\"\\\" -1}}\" | label_format service=\"{{Replace .service \\\"stream-\\\" \\\"\\\" -1}}\" [1m]))",
+        "legendFormat": "{{service}}",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "never",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 30,
+            "stacking": { "mode": "normal" }
+          },
+          "unit": "none",
+          "decimals": 1,
+          "min": 0
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["max", "mean"] },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Top Error Sources (5m)",
+      "type": "table",
+      "description": "Top 5 services by error rate (errors/sec) — nama service tanpa prefix batch-/stream-",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 4 },
+      "targets": [{
+        "expr": "topk(5, sum by(service) (rate({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} | label_format service=\"{{Replace .service \\\"batch-\\\" \\\"\\\" -1}}\" | label_format service=\"{{Replace .service \\\"stream-\\\" \\\"\\\" -1}}\" |~ `(?i)(error|exception|fail)` [5m])))",
+        "legendFormat": "{{service}}",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": ["last"]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Field": "Service",
+              "Last": "Error Rate"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              { "field": "Error Rate", "desc": true }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              { "color": "green" },
+              { "value": 0.001, "color": "orange" },
+              { "value": 1, "color": "red" }
+            ]
+          },
+          "unit": "none",
+          "decimals": 3,
+          "min": 0
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Error Timeline",
+      "type": "timeseries",
+      "description": "Error rate per second by service — lihat kapan spike error terjadi",
+      "gridPos": { "h": 8, "w": 14, "x": 0, "y": 12 },
+      "targets": [{
+        "expr": "sum by(service) (rate({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} | label_format service=\"{{Replace .service \\\"batch-\\\" \\\"\\\" -1}}\" | label_format service=\"{{Replace .service \\\"stream-\\\" \\\"\\\" -1}}\" |~ `(?i)(error|exception|fail)` [1m]))",
+        "legendFormat": "{{service}}",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "showPoints": "never",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": { "mode": "normal" }
+          },
+          "unit": "none",
+          "decimals": 1,
+          "min": 0
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["max", "mean"] },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Top Log Producers (5m)",
+      "type": "table",
+      "description": "Top 5 services by log rate (logs/sec) — service paling banyak ngeluarin log",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 12 },
+      "targets": [{
+        "expr": "topk(5, sum by(service) (rate({compose_project=\"real-time-bus-monitor\", service=~\"$service\"} | label_format service=\"{{Replace .service \\\"batch-\\\" \\\"\\\" -1}}\" | label_format service=\"{{Replace .service \\\"stream-\\\" \\\"\\\" -1}}\" [5m])))",
+        "legendFormat": "{{service}}",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": ["last"]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Field": "Service",
+              "Last": "Log Rate"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              { "field": "Log Rate", "desc": true }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              { "color": "blue" },
+              { "value": 1, "color": "purple" },
+              { "value": 5, "color": "dark-purple" }
+            ]
+          },
+          "unit": "none",
+          "decimals": 2,
+          "min": 0
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Service Logs",
+      "type": "logs",
+      "description": "Semua log dari service yang dipilih (filter via dropdown di atas)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "targets": [{
+        "expr": "{compose_project=\"real-time-bus-monitor\", service=~\"$service\"} | label_format service=\"{{Replace .service \\\"batch-\\\" \\\"\\\" -1}}\" | label_format service=\"{{Replace .service \\\"stream-\\\" \\\"\\\" -1}}\" | logfmt",
+        "datasource": { "type": "loki", "uid": "Loki" }
+      }]
+    }
+  ]
+}
