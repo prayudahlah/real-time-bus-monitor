@@ -55,3 +55,4 @@ def main(**kwargs):
     conn.close()
 
     logger.info("Loaded %s rows into stop_times", f"{len(df):,}")
+

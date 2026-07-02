@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 def main(**kwargs):
     ti = kwargs["ti"]
     run_id = ti.xcom_pull(task_ids="extract")
+    task_id = kwargs["task"].task_id
 
     client = get_minio_client()
 
