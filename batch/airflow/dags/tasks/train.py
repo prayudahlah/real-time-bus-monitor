@@ -119,7 +119,7 @@ def _log_to_mlflow(
             }
         )
 
-        mlflow.sklearn.log_model(champion, artifact_path="model", signature=signature)
+        mlflow.sklearn.log_model(champion, name="model", signature=signature)
 
         mlflow_run_id = active_run.info.run_id
         logger.info("MLflow run_id=%s", mlflow_run_id)
@@ -268,3 +268,4 @@ def main(**kwargs):
         rmse,
         r2,
     )
+

@@ -21,7 +21,7 @@ def main(**kwargs):
         "https://api.wmata.com/gtfs/bus-gtfs-static.zip",
         headers={"api_key": api_key},
         stream=True,
-        timeout=120,
+        timeout=300,
     )
     resp.raise_for_status()
 
