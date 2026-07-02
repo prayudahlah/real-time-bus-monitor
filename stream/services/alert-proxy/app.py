@@ -10,11 +10,16 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-TOPIC_ID = int(os.environ.get("TELEGRAM_INFRA_TOPIC_ID", "0"))
+
+TOPIC_MAP = {
+    "infra": int(os.environ.get("TELEGRAM_INFRA_TOPIC_ID", "0")),
+    "dq": int(os.environ.get("TELEGRAM_DQ_TOPIC_ID", "0")),
+}
 
 
 @app.route("/webhook", methods=["POST"])
-def webhook():
+@app.route("/webhook/<topic_name>", methods=["POST"])
+def webhook(topic_name="infra"):
     data = request.json
     if not data:
         return "no data", 400
@@ -40,8 +45,9 @@ def webhook():
         "chat_id": CHAT_ID,
         "text": text,
     }
-    if TOPIC_ID:
-        payload["message_thread_id"] = TOPIC_ID
+    topic_id = TOPIC_MAP.get(topic_name, 0)
+    if topic_id:
+        payload["message_thread_id"] = topic_id
 
     try:
         r = requests.post(
@@ -49,7 +55,7 @@ def webhook():
             json=payload,
             timeout=5,
         )
-        logger.info(f"Telegram: {r.status_code}")
+        logger.info(f"Telegram [{topic_name}]: {r.status_code}")
     except Exception as e:
         logger.error(f"Telegram error: {e}")
 

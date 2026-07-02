@@ -514,6 +514,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
+      TELEGRAM_DQ_TOPIC_ID: ${TELEGRAM_DQ_TOPIC_ID}
 
   # ============================================
   # Loki — Central Logging
