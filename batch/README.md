@@ -338,20 +338,3 @@ CREATE INDEX IF NOT EXISTS idx_stop_times_stop_id ON stop_times(stop_id);
 CREATE INDEX IF NOT EXISTS idx_trips_route_id ON trips(route_id);
 ```
 
----
-
-## Appendix B — CDC Bridge (Debezium)
-
-Menghubungkan batch PostgreSQL ke stream Kafka:
-
-| Field | Value |
-|---|---|
-| Connector name | `batch-pg-connector` |
-| Source | `postgres-batch:5432/batch_data` |
-| Tables | `public.routes`, `public.stops`, `public.trips`, `public.stop_times` |
-| Kafka topic prefix | `cdc` (topik: `cdc.public.routes`, dll.) |
-| Decoding plugin | `pgoutput` (PG 15+) |
-| Transform | `ExtractNewRecordState` (unwrap before/after) |
-| Replication slot | `debezium_slot` |
-
-Setiap **INSERT/UPDATE/DELETE** di batch PostgreSQL → otomatis dipublikasikan ke Kafka sebagai JSON payload. Ini memungkinkan stream-side application (dashboard, inference) mendapatkan data referensi terbaru secara real-time.
