@@ -1,9 +1,12 @@
 import os
 import time
+import logging
 import numpy as np
 import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 TRINO_HOST = os.getenv("TRINO_HOST", "localhost")
 TRINO_PORT = int(os.getenv("TRINO_PORT", "8080"))
@@ -19,6 +22,7 @@ PG_CONFIG = {
 }
 
 BATCH_CATALOG = "batch_pg"
+POSTGIS_CATALOG = "postgis"
 
 
 def _trino_query(sql):
@@ -40,7 +44,13 @@ def _pg_query(sql):
     return df
 
 
-def _try_query(sql, use_batch=False):
+def _try_query(sql, use_batch=False, use_spatial=False):
+    if use_spatial:
+        try:
+            return _trino_query(sql)
+        except Exception:
+            pass
+        return None
     catalog = BATCH_CATALOG if use_batch else CATALOG
     try:
         return _trino_query(sql.format(catalog=catalog))
@@ -278,3 +288,25 @@ def load_predictions():
     mock = _mock_predictions()
     st.info("Menggunakan data contoh — koneksi database tidak tersedia.")
     return mock
+
+
+@st.cache_data(ttl=86400, show_spinner="Memuat data halte...")
+def load_stops():
+    sql = """SELECT stop_id, stop_name, ST_Y(geom) AS lat, ST_X(geom) AS lon
+             FROM postgis.public.stops"""
+    df = _try_query(sql, use_spatial=True)
+    if df is not None and not df.empty:
+        logger.info(f"Loaded {len(df):,} stops from PostGIS")
+        return df
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=86400, show_spinner="Memuat jalur rute...")
+def load_route_paths():
+    sql = """SELECT shape_id, ST_AsText(geom) AS wkt
+             FROM postgis.public.route_paths"""
+    df = _try_query(sql, use_spatial=True)
+    if df is not None and not df.empty:
+        logger.info(f"Loaded {len(df):,} route paths from PostGIS")
+        return df
+    return pd.DataFrame()
