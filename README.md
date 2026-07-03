@@ -18,8 +18,8 @@ Pipeline dikembangkan dalam 2 sub-sistem independen:
 
 | Sub-sistem | Path | Fungsi |
 |---|---|---|
-| **Batch Pipeline** | `batch/` | Extract GTFS statis → Load ke PostgreSQL → Validasi → Feature Engineering → Training MLflow |
-| **Stream Pipeline** | `stream/` | Fetch real-time vehicle positions & alerts → Kafka → Inference → Telegram Notifications |
+| **Batch Pipeline** | `batch/` | Extract GTFS statis → Load ke PostgreSQL/PostGIS → Soda DQ Check → Feature Engineering → Training MLflow |
+| **Stream Pipeline** | `stream/` | Fetch real-time vehicle positions & alerts → Kafka → ML Inference → Dashboard & Telegram Notifications |
 
 ---
 
@@ -42,6 +42,7 @@ Pipeline dikembangkan dalam 2 sub-sistem independen:
   - [3. Start Services](#3-start-services)
   - [4. Verifikasi](#4-verifikasi)
 - [API Endpoints](#api-endpoints)
+- [Monitoring](#monitoring)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -57,11 +58,17 @@ Pipeline dikembangkan dalam 2 sub-sistem independen:
 | **Object Storage** | MinIO |
 | **ML Model Registry** | MLflow |
 | **Database** | PostgreSQL 15 |
+| **Spatial Database** | PostGIS 15-3.4 |
+| **Federated Query** | Trino 462 |
+| **Data Quality** | Soda Core |
 | **ML Model** | LinearRegression / RandomForestRegressor (scikit-learn) |
 | **API Framework** | FastAPI |
 | **Protobuf (GTFS-RT)** | protobuf, gtfs-realtime-bindings |
 | **Notifikasi** | Telegram Bot API |
 | **Dashboard** | Streamlit |
+| **Monitoring** | Prometheus, Grafana, cAdvisor |
+| **Central Logging** | Loki + Promtail |
+| **Metrics Exporter** | postgres-exporter, kafka-exporter, soda-exporter |
 
 ---
 
@@ -73,26 +80,49 @@ real-time-bus-monitor/
 ├── assets/
 │   └── architecture-diagram.gif
 │
+├── compose.yaml                    # Docker Compose unified (batch + stream)
+├── config/                         # Konfigurasi Trino catalogs
+│
+├── grafana/                        # Dashboard Grafana (JSON provisioning)
+│   └── dashboards/
+│       ├── infrastructure.json
+│       ├── inference.json
+│       ├── data_quality.json
+│       └── central_logging.json
+│
+├── prometheus/
+│   ├── prometheus.yml              # Scrape configs (6 jobs)
+│   └── alert_rules.yml
+│
 ├── batch/                          # Batch pipeline
 │   ├── .env.example
-│   ├── compose.yaml                # Docker Compose batch services
-│   ├── README.md                   # Dokumentasi batch detail
+│   ├── compose.yaml                # Docker Compose batch (independen)
+│   ├── README.md
 │   │
 │   ├── airflow/
 │   │   ├── Dockerfile
 │   │   ├── requirements.txt
 │   │   ├── dags/
 │   │   │   ├── batch_pipeline_dag.py
-│   │   │   └── tasks/
-│   │   │       ├── extract.py
-│   │   │       ├── load_routes.py
-│   │   │       ├── load_stops.py
-│   │   │       ├── load_trips.py
-│   │   │       ├── load_stop_times.py
-│   │   │       ├── validate_data.py
-│   │   │       ├── feature_eng.py
-│   │   │       ├── train.py
-│   │   │       └── utils.py
+│   │   │   ├── tasks/
+│   │   │   │   ├── extract.py
+│   │   │   │   ├── clear_tables.py
+│   │   │   │   ├── load_routes.py
+│   │   │   │   ├── load_stops.py
+│   │   │   │   ├── load_trips.py
+│   │   │   │   ├── load_stop_times.py
+│   │   │   │   ├── load_calendar.py
+│   │   │   │   ├── load_calendar_dates.py
+│   │   │   │   ├── load_agency.py
+│   │   │   │   ├── load_stops_to_postgis.py
+│   │   │   │   ├── load_shapes_to_postgis.py
+│   │   │   │   ├── soda_scan.py
+│   │   │   │   ├── feature_eng.py
+│   │   │   │   ├── train.py
+│   │   │   │   └── utils.py
+│   │   │   └── soda/
+│   │   │       ├── checks_postgres.yml   # 41 DQ checks (batch_data)
+│   │   │       └── checks_postgis.yml    # 7 DQ checks (batch_spatial)
 │   │   └── plugins/
 │   │
 │   ├── mlflow/
@@ -101,28 +131,33 @@ real-time-bus-monitor/
 │   ├── notebooks/
 │   │   └── 01-feature-eda.ipynb
 │   │
-│   └── postgres/init/
-│       ├── 01-init-dbs.sh
-│       └── 02-init-tables.sql
+│   ├── postgres/init/
+│   │   ├── 01-init-dbs.sh
+│   │   └── 02-init-tables.sql
+│   │
+│   └── postgis/init/
+│       └── 01-init-spatial.sql
 │
 └── stream/                         # Stream pipeline
-    ├── .env                        # Konfigurasi live
+    ├── .env
     ├── .env.example
-    ├── compose.yaml                # Docker Compose stream services
+    ├── compose.yaml
     │
     ├── services/
-    │   ├── wmata-fetcher/          # Fetch vehicle positions → Kafka
+    │   ├── wmata-fetcher/          # Fetch vehicle positions (30s) → Kafka
     │   │   ├── app.py
     │   │   ├── Dockerfile
     │   │   └── requirements.txt
     │   │
-    │   ├── wmata-alerts-fetcher/   # Fetch service alerts → Kafka
+    │   ├── wmata-alerts-fetcher/   # Fetch service alerts (60s) → Kafka
     │   │   ├── app.py
     │   │   ├── Dockerfile
     │   │   └── requirements.txt
     │   │
-    │   ├── inference/              # FastAPI: nearest stop & anomaly detection
+    │   ├── inference-ml/           # FastAPI + Kafka consumer: ML prediction
     │   │   ├── app.py
+    │   │   ├── preprocess.py
+    │   │   ├── metrics.py
     │   │   ├── Dockerfile
     │   │   └── requirements.txt
     │   │
@@ -131,13 +166,43 @@ real-time-bus-monitor/
     │   │   ├── Dockerfile
     │   │   └── requirements.txt
     │   │
-    │   ├── dashboard/              # Streamlit dashboard (placeholder)
+    │   ├── alert-proxy/            # Webhook Grafana → Telegram
     │   │   ├── app.py
     │   │   ├── Dockerfile
     │   │   └── requirements.txt
     │   │
-    └── postgres/init/
-        └── 01-init-tables.sql
+    │   ├── dashboard/              # Streamlit 3 halaman
+    │   │   ├── app.py
+    │   │   ├── pages/
+    │   │   │   ├── 1_Peta_Langsung.py
+    │   │   │   ├── 2_Jadwal.py
+    │   │   │   └── 3_Prediksi_Keterlambatan.py
+    │   │   ├── utils/
+    │   │   │   ├── data_loader.py
+    │   │   │   └── styling.py
+    │   │   ├── Dockerfile
+    │   │   └── requirements.txt
+    │   │
+    │   ├── soda-exporter/          # Soda scan results → Prometheus metrics
+    │   │   ├── main.py
+    │   │   ├── Dockerfile
+    │   │   └── requirements.txt
+    │   │
+    │   └── trino/
+    │       ├── Dockerfile
+    │       └── etc/
+    │           ├── config.properties
+    │           └── catalog/
+    │               ├── postgres.properties
+    │               ├── batch_pg.properties
+    │               └── postgis.properties
+    │
+    ├── postgres/init/
+    │   └── 01-init-tables.sql
+    │
+    └── scripts/
+        ├── sync_gtfs.py
+        └── load_gtfs_static.py
 ```
 
 ---
@@ -148,8 +213,10 @@ real-time-bus-monitor/
 
 | Service | Container | Fungsi |
 |---|---|---|
-| `postgres-batch` | `batch-postgres` | Database untuk hasil cleaning & metadata Airflow/MLflow |
-| `minio` | `batch-minio` | Object storage untuk raw data, features, model artifacts |
+| `postgres-batch` | `batch-postgres` | Database relasional untuk data GTFS statis (`batch_data`) |
+| `postgis-batch` | `batch-postgis` | Database spasial untuk stops (POINT) dan route_paths (LINESTRING) |
+| `minio` | `batch-minio` | Object storage: raw data, features, MLflow artifacts, Soda reports |
+| `minio-init` | `batch-minio-init` | Inisialisasi 4 bucket: `raw-data`, `features`, `mlflow`, `soda-reports` |
 | `mlflow` | `batch-mlflow` | Model registry & experiment tracking |
 | `airflow-init` | `batch-airflow-init` | Inisialisasi metadata Airflow |
 | `airflow-api-server` | `batch-airflow-api-server` | Airflow webserver + REST API |
@@ -162,41 +229,71 @@ real-time-bus-monitor/
 Dijalankan setiap **Senin jam 06:00** (`0 6 * * 1`) via Airflow DAG `batch_pipeline`.
 
 ```
-WMATA GTFS Static ZIP (routes.txt, stops.txt, trips.txt, stop_times.txt)
+WMATA GTFS Static ZIP (8 file: routes, stops, trips, stop_times,
+                        calendar, calendar_dates, agency, shapes)
     │
     ▼
 [1. Extract] ───→ raw-data/{run_id}/*.parquet (MinIO)
     │
     ▼
-[2. Load to PostgreSQL] ───→ routes, stops, trips, stop_times
+[2. Clear Tables] ───→ DELETE semua tabel PostgreSQL (idempoten)
     │
     ▼
-[3. Validate] ───→ FK checks + NULL rate checks
+[3. Load to PostgreSQL] ───→ 7 task paralel (routes, stops, trips, stop_times,
+    │                         calendar, calendar_dates, agency)
     │
-    ▼
-[4. Feature Engineering] ───→ features/{run_id}/featured_dataset.parquet (MinIO)
-    │
-    ▼
-[5. Train] ───→ MLflow → bus_travel_time_predictor (@champion)
+    ├──────────────────────────────────────────┐
+    ▼                                          ▼
+[4. Load to PostGIS] ───→ 2 task paralel   [5. Soda Scan] ───→ 48 DQ checks
+    stops (POINT) + route_paths (LINESTRING)    (PostgreSQL + PostGIS)
+    │                                          │
+    └──────────────────────────────────────────┘
+                       │
+                       ▼
+              [6. Feature Engineering] ───→ features/{run_id}/featured_dataset.parquet
+                       │
+                       ▼
+              [7. Train] ───→ 5-fold CV: LR vs RF → MLflow (@champion)
 ```
 
 **Detail tiap tahap:**
 
-1. **Extract** — Download GTFS static ZIP dari WMATA API, extract 4 file CSV, simpan sebagai Parquet di MinIO.
-2. **Load** — Baca Parquet dari MinIO, insert ke PostgreSQL (`batch_data`) dengan foreign keys.
-3. **Validate** — 3 FK checks (trip_id, route_id, stop_id) + 5 NULL rate checks. Pipeline gagal jika ada orphan atau NULL rate > 5%.
-4. **Feature Engineering** — JOIN stop_times + stops, hitung jarak haversine, travel_time, hour_of_day, stop_position_pct. Filter speed<30m/s, distance<5000m. Sample max 500k rows.
-5. **Train** — 5-fold CV untuk LinearRegression vs RandomForestRegressor. Champion = lower CV RMSE. Model gating: hanya promote jika lebih baik dari @champion.
+1. **Extract** — Download GTFS static ZIP dari WMATA API, extract 8 file CSV, konversi ke Parquet via Polars, upload ke MinIO.
+2. **Clear Tables** — DELETE semua baris dari 7 tabel PostgreSQL dengan urutan FK-safe agar pipeline idempoten.
+3. **Load to PostgreSQL** — 7 task paralel membaca Parquet dari MinIO, TRUNCATE tabel, lalu COPY data ke PostgreSQL. Task `load_trips` menunggu `load_routes` selesai; `load_stop_times` menunggu `load_trips` dan `load_stops`.
+4. **Load to PostGIS** — 2 task paralel: `load_stops_geom` memuat halte dengan geometri `ST_MakePoint(lon, lat)` SRID 4326; `load_shapes` mengagregasi titik koordinat menjadi `ST_MakeLine()` LINESTRING per `shape_id`.
+5. **Soda Scan** — Menjalankan 48 data quality checks via Soda Core pada `batch_data` (41 checks) dan `batch_spatial` (7 checks). Cek mencakup row_count, missing values, duplikasi, validitas koordinat, dan referential integrity. Laporan JSON diunggah ke MinIO `soda-reports/`. Pipeline gagal jika ada check yang tidak lolos.
+6. **Feature Engineering** — JOIN stop_times + stops, hitung jarak haversine (`distance_to_next_m`), `travel_time_sec`, `hour_of_day`, `stop_position_pct`. Filter: speed < 30 m/s, distance < 5000 m, travel_time > 0. Sample max 500k rows.
+7. **Train** — 5-fold CV untuk LinearRegression vs RandomForestRegressor (n_estimators=100, max_depth=10). Champion = lower CV RMSE. Model gating: hanya promote jika RMSE lebih baik dari @champion saat ini.
 
 ### DDL PostgreSQL
 
-**Database `batch_data`:**
+**Database `batch_data` (PostgreSQL):**
 
 ```sql
 routes     (route_id PK, route_short_name, route_long_name, route_type, route_color, route_text_color)
 stops      (stop_id PK, stop_code, stop_name, stop_desc, stop_lat, stop_lon, zone_id, stop_url)
 trips      (trip_id PK, route_id FK→routes, service_id, trip_headsign, direction_id, shape_id)
 stop_times (trip_id FK→trips, arrival_time, departure_time, stop_id FK→stops, stop_sequence, pickup_type, drop_off_type)
+calendar   (service_id PK, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date)
+calendar_dates (service_id FK→calendar, date, exception_type)
+agency     (agency_id PK, agency_name, agency_url, agency_timezone, agency_lang, agency_phone)
+```
+
+**Database `batch_spatial` (PostGIS):**
+
+```sql
+stops       (stop_id PK, geom POINT(4326) + GiST index)
+route_paths (shape_id PK, geom LINESTRING(4326) + GiST index)
+```
+
+**Database `stream_data` (PostgreSQL):**
+
+```sql
+predictions_ml_log (id PK, bus_id, route_id, trip_id, lat, lon, speed,
+                    nearest_stop_id, next_stop_id, distance_to_next_m,
+                    stop_sequence, hour_of_day, stop_position_pct,
+                    predicted_travel_time_sec, predicted_at)
 ```
 
 **Database `airflow`** — metadata Airflow (auto-managed).
@@ -208,16 +305,27 @@ stop_times (trip_id FK→trips, arrival_time, departure_time, stop_id FK→stops
 
 ### Stream Services
 
-| Service | Container | Fungsi |
-|---|---|---|
-| `zookeeper` | `stream-zookeeper` | Koordinator Kafka |
-| `kafka` | `stream-kafka` | Message broker |
-| `postgres-stream` | `stream-postgres` | Database untuk hasil inference & data referensi |
-| `wmata-fetcher` | `stream-wmata-fetcher` | Fetch **vehicle positions** (tiap 30 detik) → Kafka |
-| `wmata-alerts-fetcher` | `stream-wmata-alerts-fetcher` | Fetch **service alerts** (tiap 60 detik) → Kafka |
-| `inference` | `stream-inference` | FastAPI: nearest stop lookup, ETA, anomaly detection |
-| `alert-telegram` | `stream-alert-telegram` | Consumer Kafka: service alerts → Telegram |
-| `dashboard` | `stream-dashboard` | Streamlit dashboard (placeholder) |
+| Service | Container | Port | Fungsi |
+|---|---|---|---|
+| `zookeeper` | `stream-zookeeper` | 2181 | Koordinator Kafka |
+| `kafka` | `stream-kafka` | 9092 | Message broker |
+| `postgres-stream` | `stream-postgres` | 5434 | Database stream (predictions + GTFS replica) |
+| `wmata-fetcher` | `stream-wmata-fetcher` | — | Fetch vehicle positions (tiap 30s) → Kafka |
+| `wmata-alerts-fetcher` | `stream-wmata-alerts-fetcher` | — | Fetch service alerts (tiap 60s) → Kafka |
+| `inference-ml` | `stream-inference-ml` | 8002 | FastAPI + Kafka consumer: ML prediction |
+| `alert-telegram` | `stream-alert-telegram` | — | Consumer Kafka: service alerts → Telegram |
+| `alert-proxy` | `stream-alert-proxy` | 5000 | Webhook Grafana → Telegram |
+| `dashboard` | `stream-dashboard` | 8501 | Streamlit 3 halaman (Peta, Jadwal, Prediksi) |
+| `trino` | `stream-trino` | 8081 | Federated query engine (3 katalog) |
+| `prometheus` | `batch-prometheus` | 9090 | Time-series monitoring (6 scrape jobs) |
+| `grafana` | `batch-grafana` | 3000 | Dashboard + alerting (4 dashboard) |
+| `cadvisor` | `batch-cadvisor` | 8082 | Container resource metrics |
+| `postgres-exporter-batch` | `batch-postgres-exporter` | 9187 | PostgreSQL metrics (batch) |
+| `postgres-exporter-stream` | `stream-postgres-exporter` | 9187 | PostgreSQL metrics (stream) |
+| `kafka-exporter` | `stream-kafka-exporter` | 9308 | Kafka topic metrics |
+| `soda-exporter` | `stream-soda-exporter` | 8003 | Data quality metrics → Prometheus |
+| `loki` | `batch-loki` | 3100 | Central log aggregation (24h retention) |
+| `promtail` | `batch-promtail` | 9080 | Docker log collector → Loki |
 
 ### Alur Stream
 
@@ -245,23 +353,35 @@ stop_times (trip_id FK→trips, arrival_time, departure_time, stop_id FK→stops
                   │                     │
                   ▼                     ▼
        ┌──────────────────┐   ┌────────────────────┐
-       │ inference (API)  │   │ alert-telegram     │
-       │ /predict         │   │ (Kafka Consumer)   │
+       │ inference-ml     │   │ alert-telegram     │
+       │ (Kafka Consumer) │   │ (Kafka Consumer)   │
        │ nearest stop     │   │                    │
-       │ ETA              │   │ format: HTML       │
-       │ anomaly detection│   │ parse_mode         │
+       │ feature compute  │   │ format: HTML       │
+       │ ML predict       │   │ parse_mode         │
        └────────┬─────────┘   └─────────┬──────────┘
                 │                       │
                 ▼                       ▼
        PostgreSQL              Telegram Bot API
-       predictions_log         → Telegram Group
+       predictions_ml_log      → Telegram Group (Bus Alerts)
+
+       ┌──────────────────────────────────────────────────┐
+       │  Trino (Federated Query)                         │
+       │  ┌────────────┐ ┌────────────┐ ┌──────────────┐ │
+       │  │ postgres   │ │ batch_pg   │ │ postgis      │ │
+       │  │(stream PG) │ │(batch PG)  │ │(batch PostGIS│ │
+       │  └─────┬──────┘ └─────┬──────┘ └──────┬───────┘ │
+       │        └───────────────┼───────────────┘         │
+       │                        ▼                         │
+       │              Dashboard Streamlit                 │
+       │              (Peta, Jadwal, Prediksi)            │
+       └──────────────────────────────────────────────────┘
 ```
 
 ### Kafka Topics
 
 | Topic | Producer | Consumer | Format |
 |---|---|---|---|
-| `bus.raw.vehicle_positions` | `wmata-fetcher` (tiap 30s) | _tidak dikonsumsi (cadangan)_ | `{"bus_id", "lat", "lon", "speed", "route_id", "timestamp"}` |
+| `bus.raw.vehicle_positions` | `wmata-fetcher` (tiap 30s) | `inference-ml` | `{"bus_id", "lat", "lon", "speed", "route_id", "trip_id", "start_date", "start_time", "timestamp"}` |
 | `bus.service.alerts` | `wmata-alerts-fetcher` (tiap 60s) | `alert-telegram` | `{"id", "header", "description", "cause", "effect", "url", "routes", "active_start", "active_end"}` |
 
 Topics dibuat otomatis oleh Kafka (`AUTO_CREATE_TOPICS_ENABLE=true`).
@@ -270,9 +390,13 @@ Topics dibuat otomatis oleh Kafka (`AUTO_CREATE_TOPICS_ENABLE=true`).
 
 ## Telegram Alerts
 
-Alert dikirim ke Telegram group via Bot API ketika ada **service alert** dari WMATA.
+Sistem mengirimkan notifikasi otomatis ke tiga grup Telegram yang terpisah sesuai jenisnya.
 
-### Format Pesan
+### 1. Bus Alerts
+
+Alert dikirim ke Telegram group ketika ada **service alert** dari WMATA.
+
+#### Format Pesan
 
 ```
 📢 WMATA Service Alert
@@ -320,19 +444,36 @@ More info
 | 8 | Stop Moved |
 | 10 | Accessibility Issue |
 
+### 2. Pipeline Alerts
+
+Notifikasi status eksekusi task pada DAG `batch_pipeline` dari Airflow. Dikirim via callback DAG (on_success_callback / on_failure_callback) ke topic Telegram Pipeline. Mencakup status keberhasilan task, waktu run, serta tautan log untuk debugging.
+
+### 3. Data Quality & Infrastructure Alerts
+
+Notifikasi dari Grafana Alerting melalui `alert-proxy` (webhook receiver). Terpisah menjadi dua topic Telegram:
+
+| Topic Telegram | Sumber | Konten |
+|---|---|---|
+| Infra Alerts | Grafana (CPU, RAM, disk, container down) | Alert infrastruktur |
+| DQ Alerts | Grafana (hasil scan Soda) | Jumlah check passed/failed/warning + link dashboard |
+
 ### Sumber Data WMATA
 
 | Endpoint | Deskripsi | Frekuensi Fetch |
 |---|---|---|
+| `https://api.wmata.com/gtfs/bus-gtfsrt-vehiclepositions.pb` | GTFS-RT vehicle positions (Protobuf binary) | Setiap 30 detik |
 | `https://api.wmata.com/gtfs/bus-gtfsrt-alerts.pb` | GTFS-RT service alerts (Protobuf binary) | Setiap 60 detik |
 
 ### Konfigurasi Telegram
 
-Di `stream/.env`:
+Di `.env`:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=-your_chat_id
+TELEGRAM_BUS_TOPIC_ID=your_bus_topic_id
+TELEGRAM_PIPELINE_TOPIC_ID=your_pipeline_topic_id
+TELEGRAM_DQ_TOPIC_ID=your_dq_topic_id
+TELEGRAM_INFRA_TOPIC_ID=your_infra_topic_id
 ```
 
 ---
@@ -355,69 +496,68 @@ cd real-time-bus-monitor
 
 ### 2. Environment Variables
 
-**Batch:**
-
 ```bash
-cp batch/.env.example batch/.env
-# Isi: WMATA_API_KEY, MINIO_ROOT_PASSWORD, POSTGRES_PASSWORD, AIRFLOW_JWT_SECRET
-```
-
-**Stream:**
-
-```bash
-cp stream/.env.example stream/.env
-# Isi: WMATA_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, POSTGRES_PASSWORD
+cp .env.example .env
+# Isi: WMATA_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_*_TOPIC_ID,
+#      POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD, AIRFLOW_JWT_SECRET, dll.
 ```
 
 ### 3. Start Services
 
-**Batch server:**
+**Unified (batch + stream + monitoring):**
 
 ```bash
-cd batch
 docker compose up -d
 ```
 
-**Stream server:**
+**Atau secara independen:**
 
 ```bash
-cd stream
-docker compose up -d
+cd batch && docker compose up -d    # Batch server only
+cd stream && docker compose up -d   # Stream server only
 ```
-
-Kedua server bisa di-start independen — tidak ada dependensi satu sama lain.
 
 ### 4. Verifikasi
 
-| Service | URL | Server |
+| Service | URL | Komponen |
 |---|---|---|
-| MinIO Console | `http://{BATCH_IP}:9001` | Batch |
-| MLflow UI | `http://{BATCH_IP}:5000` | Batch |
-| Airflow Webserver | `http://{BATCH_IP}:8080` | Batch |
-| FastAPI Inference | `http://{STREAM_IP}:8001/health` | Stream |
-| Streamlit Dashboard | `http://{STREAM_IP}:8502` | Stream |
+| MinIO Console | `http://localhost:9001` | Batch |
+| MLflow UI | `http://localhost:5000` | Batch |
+| Airflow Webserver | `http://localhost:8080` | Batch |
+| Grafana | `http://localhost:3000` | Monitoring |
+| Prometheus | `http://localhost:9090` | Monitoring |
+| Inference-ML | `http://localhost:8002/health` | Stream |
+| Streamlit Dashboard | `http://localhost:8501` | Stream |
+| Trino | `http://localhost:8081` | Stream |
 
 ### Port Mapping
 
 | Service | Default Port | Env Variable |
 |---|---|---|
-| Kafka | 9094 | `KAFKA_PORT` |
-| PostgreSQL (stream) | 5432 | `POSTGRES_PORT` |
-| Inference API | 8001 | `INFERENCE_PORT` |
-| Dashboard | 8502 | `DASHBOARD_PORT` |
+| Kafka | 9092 | `KAFKA_PORT` |
+| PostgreSQL (stream) | 5434 | `POSTGRES_PORT` |
+| PostgreSQL (batch) | 5432 | `BATCH_PG_PORT` |
+| PostGIS (batch) | 5433 | `POSTGIS_PORT` |
+| Inference-ML API | 8002 | `INFERENCE_PORT` |
+| Dashboard | 8501 | `DASHBOARD_PORT` |
+| Trino | 8081 | `TRINO_PORT` |
+| Grafana | 3000 | `GRAFANA_PORT` |
+| Prometheus | 9090 | — |
+| MinIO Console | 9001 | — |
 
 ---
 
 ## API Endpoints
 
-### Inference Service (`http://{host}:8001`)
+### Inference-ML Service (`http://{host}:8002`)
 
 | Method | Path | Deskripsi |
 |---|---|---|
-| GET | `/health` | Health check |
-| POST | `/predict` | Prediksi nearest stop, ETA, anomaly |
+| GET | `/health` | Health check (status + model_loaded) |
+| GET | `/metrics` | Prometheus metrics |
+| POST | `/predict-ml` | Prediksi travel time dengan model ML |
 
-**POST /predict**
+**POST /predict-ml**
 
 Request:
 ```json
@@ -425,8 +565,9 @@ Request:
   "bus_id": "4528",
   "lat": 38.895,
   "lon": -77.036,
-  "speed": 0.0,
-  "route_id": "D24"
+  "speed": 5.2,
+  "route_id": "D24",
+  "trip_id": "12345"
 }
 ```
 
@@ -434,17 +575,72 @@ Response:
 ```json
 {
   "bus_id": "4528",
+  "route_id": "D24",
+  "trip_id": "12345",
   "nearest_stop_id": "10005",
-  "distance_to_stop_m": 3278.83,
-  "eta_seconds": 655.77,
-  "anomaly": true,
-  "anomaly_reason": "Too far from nearest stop (3279m)"
+  "next_stop_id": "10006",
+  "distance_to_next_m": 842.5,
+  "stop_sequence": 12,
+  "hour_of_day": 14,
+  "stop_position_pct": 0.48,
+  "predicted_travel_time_sec": 187.3
 }
 ```
 
-Anomaly detection logic:
-- `speed > 30 m/s` → "Speed too high"
-- `distance_to_stop > 500 m` → "Too far from nearest stop"
+**Fitur model (4 input):**
+
+| Fitur | Tipe | Deskripsi |
+|---|---|---|
+| `distance_to_next_m` | Float | Jarak haversine ke halte berikutnya (meter) |
+| `stop_sequence` | Int | Urutan halte dalam trip |
+| `hour_of_day` | Int | Jam kedatangan (0-23) |
+| `stop_position_pct` | Float | Rasio progres perjalanan (stop_sequence / total_stops) |
+
+**Target:** `predicted_travel_time_sec` — estimasi waktu tempuh ke halte berikutnya (detik).
+
+---
+
+## Monitoring
+
+Prometheus melakukan scraping metrik dari seluruh service setiap 15 detik melalui 6 scrape jobs:
+
+| Job | Target | Port |
+|---|---|---|
+| `cadvisor` | cAdvisor | 8080 |
+| `postgres-batch` | postgres-exporter-batch | 9187 |
+| `postgres-stream` | postgres-exporter-stream | 9187 |
+| `kafka` | kafka-exporter | 9308 |
+| `inference-ml` | inference-ml | 8000 |
+| `soda-exporter` | soda-exporter | 8000 |
+
+### Grafana Dashboards
+
+4 dashboard provisioned otomatis:
+
+| Dashboard | Fokus | Data Source |
+|---|---|---|
+| **Infrastructure Monitoring** | CPU, RAM, disk, container, PG connections, Kafka offsets | Prometheus (cAdvisor + exporters) |
+| **Inference Monitoring** | Model status, total prediksi, latency, error rate, Kafka messages | Prometheus (inference-ml metrics) |
+| **Data Quality Monitoring** | Total checks, pass rate, individual check results | Prometheus (soda-exporter) |
+| **Central Logging** | Log lines, errors, warnings, log rate, top error sources | Loki |
+
+### Central Logging
+
+Loki + Promtail mengumpulkan log dari seluruh container Docker dengan retensi 24 jam. Promtail melakukan service discovery via Docker socket dan melabeli setiap log dengan nama container.
+
+### Grafana Alerting
+
+Alerting terhubung ke Telegram melalui `alert-proxy` (webhook receiver). Contact point "Telegram Infra" mengirim alert ke topic Telegram yang terpisah berdasarkan kategori (infrastruktur vs data quality).
+
+### Trino Federated Query
+
+Trino menjembatani 3 katalog PostgreSQL sehingga dashboard Streamlit dapat mengakses data batch tanpa replikasi:
+
+| Katalog | Target | Database |
+|---|---|---|
+| `postgres` | postgres-stream:5434 | `stream_data` |
+| `batch_pg` | postgres-batch:5432 | `batch_data` |
+| `postgis` | postgis-batch:5433 | `batch_spatial` |
 
 ---
 
@@ -456,7 +652,7 @@ Hapus volume Kafka data dan restart:
 
 ```bash
 docker compose down
-docker volume rm stream_kafkadata
+docker volume rm real-time-bus-monitor_kafkadata
 docker compose up -d
 ```
 
@@ -475,16 +671,32 @@ docker compose ps
 ### WMATA API Key invalid
 
 ```bash
-docker compose logs wmata-alerts-fetcher
-# Jika "WMATA_API_KEY not set", periksa stream/.env
+docker compose logs stream-wmata-alerts-fetcher
+# Jika "WMATA_API_KEY not set", periksa .env
 ```
 
 ### Telegram notifikasi tidak muncul
 
 ```bash
-docker compose logs alert-telegram
+docker compose logs stream-alert-telegram
 # Pastikan: "Alert sent to Telegram" muncul
-# Jika "Telegram credentials missing", periksa TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID di .env
+# Jika "Telegram credentials missing", periksa TELEGRAM_BOT_TOKEN di .env
+```
+
+### inference-ml model tidak load
+
+```bash
+docker compose logs stream-inference-ml
+# Cek apakah MLflow sudah available
+# Service akan retry setiap 60s hingga model berhasil dimuat
+```
+
+### Trino query gagal
+
+```bash
+docker compose logs stream-trino
+# Pastikan 3 katalog terkoneksi: postgres, batch_pg, postgis
+# Dashboard akan fallback ke direct PostgreSQL jika Trino unavailable
 ```
 
 ### Rebuild service setelah perubahan kode
@@ -503,6 +715,7 @@ Contoh: `docker compose build alert-telegram; docker compose up -d alert-telegra
 docker compose logs -f
 
 # Service tertentu
-docker compose logs -f alert-telegram
-docker compose logs -f wmata-alerts-fetcher
+docker compose logs -f stream-alert-telegram
+docker compose logs -f stream-wmata-alerts-fetcher
+docker compose logs -f stream-inference-ml
 ```
