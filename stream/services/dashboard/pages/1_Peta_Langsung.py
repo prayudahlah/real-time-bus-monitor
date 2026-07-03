@@ -4,7 +4,7 @@ import pydeck as pdk
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-from utils.data_loader import load_bus_positions, load_predictions, load_route_descriptions, load_stops, load_route_paths
+from utils.data_loader import load_bus_positions, load_predictions, load_route_descriptions, load_stops, load_route_paths, load_stop_names
 from utils.styling import status_badge, kpi_card, inject_custom_css
 
 inject_custom_css()
@@ -24,9 +24,10 @@ st.markdown(
 with st.spinner("Memuat data..."):
     df = load_bus_positions()
     predictions = load_predictions()
-    route_desc = load_route_descriptions()
+    route_desc, route_id_map = load_route_descriptions()
     stops_df = load_stops()
     paths_df = load_route_paths()
+    stop_names = load_stop_names()
 
 # KPI cards dipindahkan ke bawah filter
 
@@ -34,32 +35,80 @@ with st.spinner("Memuat data..."):
 if df.empty:
     st.warning("Belum ada data posisi bus.")
     st.stop()
+from functools import reduce
 
-routes = sorted(df["route_id"].dropna().unique())
+def _avail(col, sel_r="", sel_b=(), sel_o=(), sel_d=()):
+    """Return sorted unique values of `col` restricted by other active filters."""
+    masks = []
+    if col != "route_id":
+        if isinstance(sel_r, str):
+            if sel_r: masks.append(df["route_id"] == sel_r)
+        elif sel_r:
+            masks.append(df["route_id"].isin(sel_r))
+    if sel_b and col != "bus_id": masks.append(df["bus_id"].isin(sel_b))
+    if sel_o and col != "nearest_stop_id": masks.append(df["nearest_stop_id"].isin(sel_o))
+    if sel_d and col != "next_stop_id": masks.append(df["next_stop_id"].isin(sel_d))
+    mask = reduce(lambda a, b: a & b, masks) if masks else pd.Series(True, index=df.index)
+    return sorted(df.loc[mask, col].dropna().unique())
+
+
+# ─── Read filter values from session state (preserved across reruns) ──
+sel_routes = st.session_state.get("map_routes", "")
+sel_status = st.session_state.get("map_status", "Semua Status")
+sel_bus = st.session_state.get("map_bus_search", [])
+sel_origin = st.session_state.get("map_origin", [])
+sel_dest = st.session_state.get("map_dest", [])
+
+# Initialize default route on first load
+if "map_routes" not in st.session_state:
+    opts = _avail("route_id")
+    if opts:
+        st.session_state["map_routes"] = opts[0]
+        sel_routes = opts[0]
+
+# Parse stop-ids from selections
+origin_ids_wanted = [o.split(" (")[-1].rstrip(")") for o in sel_origin] if sel_origin else []
+dest_ids_wanted = [d.split(" (")[-1].rstrip(")") for d in sel_dest] if sel_dest else []
 
 col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1.5, 1.5, 1], gap="medium")
 with col_f1:
-    # Bug #2: default=[] — empty = "show all"
-    sel_routes = st.multiselect("Route", routes, default=[], key="map_routes")
+    opts = _avail("route_id", sel_r=sel_routes, sel_b=sel_bus, sel_o=origin_ids_wanted, sel_d=dest_ids_wanted)
+    sel_routes = st.selectbox("Route", opts, index=opts.index(sel_routes) if sel_routes in opts else 0, key="map_routes")
 with col_f2:
     status_opts = ["Semua Status", "Live", "Tertunda", "Kadaluarsa"]
-    sel_status = st.selectbox("Status", status_opts, index=0, key="map_status")
+    sel_status = st.selectbox("Status", status_opts, index=status_opts.index(sel_status) if sel_status in status_opts else 0, key="map_status")
 with col_f3:
-    sel_bus = st.text_input("Cari Bus ID", key="map_bus_search")
+    opts = _avail("bus_id", sel_r=sel_routes, sel_b=sel_bus, sel_o=origin_ids_wanted, sel_d=dest_ids_wanted)
+    sel_bus = [v for v in sel_bus if v in opts]
+    sel_bus = st.multiselect("Bus ID", opts, default=sel_bus, key="map_bus_search")
 with col_f4:
     sel_interval = st.slider("Refresh (dtk)", 5, 60, 15, key="map_interval")
 
-# ─── Apply filters ────────────────────────────────────────────────────
-# Jika tidak ada route dipilih, tampilkan semua
-if sel_routes:
-    filtered = df[df["route_id"].isin(sel_routes)].copy()
-else:
-    filtered = df.copy()
+# ─── Stop filter row ────────────────────────────────────────────
+col_o, col_d = st.columns(2, gap="medium")
+with col_o:
+    opts = _avail("nearest_stop_id", sel_r=sel_routes, sel_b=sel_bus, sel_o=origin_ids_wanted, sel_d=dest_ids_wanted)
+    opts_fmt = sorted([f"{stop_names.get(s, s)} ({s})" for s in opts])
+    sel_origin = [v for v in sel_origin if v in opts_fmt]
+    sel_origin = st.multiselect("Dari Halte", opts_fmt, default=sel_origin, key="map_origin")
+with col_d:
+    opts = _avail("next_stop_id", sel_r=sel_routes, sel_b=sel_bus, sel_o=origin_ids_wanted, sel_d=dest_ids_wanted)
+    opts_fmt = sorted([f"{stop_names.get(s, s)} ({s})" for s in opts])
+    sel_dest = [v for v in sel_dest if v in opts_fmt]
+    sel_dest = st.multiselect("Ke Halte", opts_fmt, default=sel_dest, key="map_dest")
 
-if sel_status != "Semua Status":
-    filtered = filtered[filtered["status"] == sel_status]
-if sel_bus:
-    filtered = filtered[filtered["bus_id"].str.contains(sel_bus, case=False, na=False)]
+# ─── Parse stop IDs ─────────────────────────────────────────────
+origin_ids_wanted = [o.split(" (")[-1].rstrip(")") for o in sel_origin] if sel_origin else []
+dest_ids_wanted = [d.split(" (")[-1].rstrip(")") for d in sel_dest] if sel_dest else []
+
+# ─── Apply all filters ──────────────────────────────────────────
+mask = pd.Series(True, index=df.index)
+if sel_routes: mask &= df["route_id"] == sel_routes
+if sel_status != "Semua Status": mask &= df["status"] == sel_status
+if sel_bus: mask &= df["bus_id"].isin(sel_bus)
+if origin_ids_wanted: mask &= df["nearest_stop_id"].isin(origin_ids_wanted)
+if dest_ids_wanted: mask &= df["next_stop_id"].isin(dest_ids_wanted)
+filtered = df[mask].copy()
 
 filtered = filtered.sort_values("created_at").groupby("bus_id", as_index=False).last()
 
@@ -189,7 +238,7 @@ if not filtered.empty:
     st.markdown("### Route")
     legend_cols = st.columns(min(5, len(route_color_map)))
     for idx, (r, c) in enumerate(sorted(route_color_map.items())):
-        desc = route_desc.get(r, r)
+        desc = route_id_map.get(r, r)
         with legend_cols[idx % 5]:
             st.markdown(
                 f"""<div class='legend-item'><span class='legend-dot' style='background:{c};'>
@@ -213,7 +262,9 @@ if not predictions.empty:
         Normal=("status", lambda x: (x == "Normal").sum()),
         Lambat=("status", lambda x: (x == "Lambat").sum()),
     ).reset_index()
-    ringkasan["Route Info"] = ringkasan["route"].map(route_desc)
+    ringkasan["Route Info"] = ringkasan["route"].apply(
+        lambda r: route_id_map.get(r, route_desc.get(r, r))
+    )
     ringkasan["Rata_Waktu"] = (ringkasan["Rata_Waktu"] / 60).round(1).astype(str) + " mnt"
     ringkasan["Rata_Speed"] = ringkasan["Rata_Speed"].round(1).astype(str) + " m/s"
     ringkasan = ringkasan[["Route Info", "Bus", "Prediksi", "Rata_Waktu", "Rata_Speed",

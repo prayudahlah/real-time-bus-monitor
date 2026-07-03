@@ -70,62 +70,7 @@ def inject_custom_css():
 
         .stApp { background-color: #FFFDF6; }
 
-        /* ── Top Navbar ──────────────────────────────────────────── */
-        div[data-testid="stHorizontalBlock"] {
-            background: #F6FFE9;
-            border-radius: 18px;
-            padding: 6px 10px;
-            margin-bottom: 12px;
-            align-items: center;
-            gap: 4px;
-        }
-
         .nav-brand {
-            font-family: 'Space Grotesk', sans-serif;
-            font-size: 1.2rem;
-            font-weight: 800;
-            color: #E85A72;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            padding: 6px 12px;
-            white-space: nowrap;
-        }
-
-        div[data-testid="stHorizontalBlock"] .stButton button {
-            border-radius: 14px !important;
-            font-family: 'Space Grotesk', sans-serif !important;
-            font-weight: 700 !important;
-            font-size: 0.85rem !important;
-            text-transform: uppercase !important;
-            letter-spacing: 0.5px !important;
-            padding: 8px 20px !important;
-            border: none !important;
-            transition: all 0.2s ease;
-            box-shadow: none !important;
-        }
-
-        div[data-testid="stHorizontalBlock"] .stButton button[kind="secondary"] {
-            background: transparent !important;
-            color: #3A2E12 !important;
-        }
-        div[data-testid="stHorizontalBlock"] .stButton button[kind="secondary"]:hover {
-            background: rgba(232, 90, 114, 0.1) !important;
-        }
-
-        div[data-testid="stHorizontalBlock"] .stButton button[kind="primary"] {
-            background: #E85A72 !important;
-            color: #FFFFFF !important;
-        }
-        div[data-testid="stHorizontalBlock"] .stButton button[kind="primary"]:hover {
-            background: #c94860 !important;
-        }
-
-        div[data-testid="stHorizontalBlock"] .stButton button:focus:not(:focus-visible) {
-            outline: none !important;
-            box-shadow: none !important;
-        }
-
-        div[data-testid="stMetric"] {
             background: #FFFFFF;
             border-radius: 18px;
             padding: 18px 22px;
