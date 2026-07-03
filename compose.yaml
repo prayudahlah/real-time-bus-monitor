@@ -28,6 +28,9 @@ x-airflow-common: &airflow-common
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
     TELEGRAM_PIPELINE_TOPIC_ID: ${TELEGRAM_PIPELINE_TOPIC_ID}
+    TELEGRAM_DQ_TOPIC_ID: ${TELEGRAM_DQ_TOPIC_ID}
+    PYTHONWARNINGS: "ignore::FutureWarning"
+    GRAFANA_URL: ${GRAFANA_URL:-http://grafana:3000}
   volumes:
     - ./batch/airflow/dags:/opt/airflow/dags:ro
     - ./batch/airflow/logs:/opt/airflow/logs

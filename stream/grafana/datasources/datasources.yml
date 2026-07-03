@@ -13,3 +13,15 @@ datasources:
     type: prometheus
     url: http://${BATCH_TAILSCALE_IP}:9090
     access: proxy
+
+  - name: Loki Stream
+    uid: loki-stream
+    type: loki
+    access: proxy
+    url: http://loki:3100
+
+  - name: Loki Batch
+    uid: loki-batch
+    type: loki
+    access: proxy
+    url: http://${BATCH_TAILSCALE_IP}:3100

@@ -1,8 +1,10 @@
 checks for stops:
   - row_count > 7000
   - missing_count(stop_id) = 0
+  - missing_count(geom) = 0
   - duplicate_count(stop_id) = 0
 
 checks for route_paths:
   - row_count > 300
   - missing_count(shape_id) = 0
+  - missing_count(geom) = 0

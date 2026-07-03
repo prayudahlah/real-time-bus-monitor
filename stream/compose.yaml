@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WMATA_API_KEY: ${WMATA_API_KEY}
@@ -118,7 +118,7 @@ services:
       - "${INFERENCE_ML_PORT:-8002}:8000"
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
       postgres-stream:
         condition: service_healthy
     environment:
@@ -140,7 +140,7 @@ services:
     restart: unless-stopped
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
@@ -167,7 +167,7 @@ services:
     restart: unless-stopped
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WMATA_API_KEY: ${WMATA_API_KEY}
@@ -192,6 +192,8 @@ services:
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}
@@ -235,9 +237,32 @@ services:
     command: ["--kafka.server=kafka:9092"]
     depends_on:
       kafka:
-        condition: service_started
+        condition: service_healthy
+
+  # ============================================
+  # Monitoring — Loki (Central Logging)
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: stream-loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ../config/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yml
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: stream-promtail
+    restart: unless-stopped
+    volumes:
+      - ../config/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
 
 volumes:
   zkdata:
   kafkadata:
   pgdata:
+  loki-data:
