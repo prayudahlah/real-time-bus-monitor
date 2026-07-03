@@ -73,7 +73,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WMATA_API_KEY: ${WMATA_API_KEY}
-      FETCH_INTERVAL_SEC: 30
+      FETCH_INTERVAL_SEC: 10
 
   trino:
     build:
@@ -133,6 +133,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-stream_data}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      BATCH_PG_HOST: ${BATCH_PG_HOST:-prayudahlah}
+      BATCH_PG_PORT: 5432
+      BATCH_PG_USER: ${BATCH_PG_USER:-kelompok8}
+      BATCH_PG_PASSWORD: ${BATCH_PG_PASSWORD:-kelompok8}
+      BATCH_PG_DB: batch_data
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://${BATCH_TAILSCALE_IP:-prayudahlah}:5000}
       MLFLOW_S3_ENDPOINT_URL: http://${BATCH_TAILSCALE_IP:-prayudahlah}:9000
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
