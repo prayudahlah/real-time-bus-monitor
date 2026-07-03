@@ -4,7 +4,7 @@ import pydeck as pdk
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-from utils.data_loader import load_bus_positions, load_predictions, load_route_descriptions
+from utils.data_loader import load_bus_positions, load_predictions, load_route_descriptions, load_stops, load_route_paths
 from utils.styling import status_badge, kpi_card, inject_custom_css
 
 inject_custom_css()
@@ -25,6 +25,8 @@ with st.spinner("Memuat data..."):
     df = load_bus_positions()
     predictions = load_predictions()
     route_desc = load_route_descriptions()
+    stops_df = load_stops()
+    paths_df = load_route_paths()
 
 # KPI cards dipindahkan ke bawah filter
 
@@ -75,6 +77,31 @@ with k2:
 with k3:
     st.markdown(kpi_card(f"{kpi_speed} m/s", "Kecepatan Rata-rata", 2), unsafe_allow_html=True)
 
+# ─── Process route paths from WKT ─────────────────────────────────────
+path_layers = []
+if not paths_df.empty:
+    for _, row in paths_df.iterrows():
+        wkt = row.get("wkt", "")
+        if wkt.startswith("LINESTRING ("):
+            coords_str = wkt[len("LINESTRING ("):-1]
+            coords = []
+            for pair in coords_str.split(","):
+                parts = pair.strip().split()
+                if len(parts) >= 2:
+                    coords.append([float(parts[0]), float(parts[1])])
+            if len(coords) > 1:
+                path_layers.append(pdk.Layer(
+                    "PathLayer",
+                    data=[{"path": coords, "name": row["shape_id"]}],
+                    get_path="path",
+                    get_color=[200, 200, 200, 60],
+                    width_scale=1,
+                    width_min_pixels=1,
+                    pickable=True,
+                ))
+    if path_layers:
+        st.caption(f"Menampilkan {len(path_layers)} jalur rute dari PostGIS")
+
 # ─── Map ──────────────────────────────────────────────────────────────
 if not filtered.empty:
     route_color_map = {}
@@ -98,11 +125,19 @@ if not filtered.empty:
         ), axis=1
     )
 
-    view_state = pdk.ViewState(
-        latitude=filtered["lat"].mean(),
-        longitude=filtered["lon"].mean(),
-        zoom=12, pitch=0,
-    )
+    # Determine view state from bus positions or stop data
+    if not stops_df.empty:
+        view_state = pdk.ViewState(
+            latitude=stops_df["lat"].mean(),
+            longitude=stops_df["lon"].mean(),
+            zoom=12, pitch=0,
+        )
+    else:
+        view_state = pdk.ViewState(
+            latitude=filtered["lat"].mean(),
+            longitude=filtered["lon"].mean(),
+            zoom=12, pitch=0,
+        )
 
     icon_data = {
         "url": "https://img.icons8.com/ios-filled/50/ffffff/marker.png",
@@ -113,7 +148,23 @@ if not filtered.empty:
     }
     filtered["icon_data"] = [icon_data] * len(filtered)
 
-    layer = pdk.Layer(
+    layers = path_layers.copy()
+
+    # Add stop points layer
+    if not stops_df.empty:
+        layers.append(pdk.Layer(
+            "ScatterplotLayer",
+            data=stops_df,
+            get_position=["lon", "lat"],
+            get_radius=8,
+            get_fill_color=[150, 150, 150, 30],
+            get_line_color=[200, 200, 200, 80],
+            get_line_width=1,
+            pickable=False,
+        ))
+
+    # Add bus icon layer
+    layers.append(pdk.Layer(
         "IconLayer",
         data=filtered,
         get_position=["lon", "lat"],
@@ -123,10 +174,10 @@ if not filtered.empty:
         get_color="color",
         pickable=True,
         auto_highlight=True,
-    )
+    ))
 
     deck = pdk.Deck(
-        layers=[layer],
+        layers=layers,
         initial_view_state=view_state,
         tooltip={"text": "{tooltip_text}"},
     )
