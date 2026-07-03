@@ -13,7 +13,7 @@ from kafka import KafkaConsumer
 
 from fastapi.responses import Response
 from prometheus_client import generate_latest
-from preprocess import load_gtfs_data, compute_features
+from preprocess import load_gtfs_data, compute_features, set_batch_config
 from model_loader import load_model, get_model
 from metrics import (
     PREDICTIONS_TOTAL, ERRORS_TOTAL, LATENCY,
@@ -46,6 +46,17 @@ class PredictMLRequest(BaseModel):
 @app.on_event("startup")
 def startup():
     logger.info("Inference-ML starting up...")
+    batch_host = os.getenv("BATCH_PG_HOST")
+    if batch_host:
+        set_batch_config({
+            "host": batch_host,
+            "port": os.getenv("BATCH_PG_PORT", "5432"),
+            "user": os.getenv("BATCH_PG_USER", "kelompok8"),
+            "password": os.getenv("BATCH_PG_PASSWORD", "kelompok8"),
+            "dbname": os.getenv("BATCH_PG_DB", "batch_data"),
+            "connect_timeout": 30,
+        })
+        logger.info(f"Batch PG configured: {batch_host}")
     stops = load_gtfs_data(POSTGRES_CONFIG)
     STOPS_LOADED.set(stops)
     load_model()
