@@ -43,36 +43,41 @@ def _load_data(conn):
 
 
 def _compute_features(df):
-    df = df.with_columns(total_stops=pl.len().over("trip_id"))
-
-    df = df.with_columns(
-        pl.col("stop_lat").shift(-1).over("trip_id").alias("lat_next"),
-        pl.col("stop_lon").shift(-1).over("trip_id").alias("lon_next"),
-    )
-    df = df.with_columns(
-        lat_mid=(pl.col("stop_lat") + pl.col("lat_next")) / 2,
-    )
-    df = df.with_columns(
-        dx=(pl.col("lon_next") - pl.col("stop_lon"))
-        * 111320
-        * pl.col("lat_mid").radians().cos(),
-        dy=(pl.col("lat_next") - pl.col("stop_lat")) * 111320,
-    ).with_columns(distance_to_next_m=(pl.col("dx") ** 2 + pl.col("dy") ** 2).sqrt())
-
-    df = df.with_columns(arrival_sec=_time_to_sec(pl.col("arrival_time")))
-    df = df.with_columns(
-        arrival_next_sec=pl.col("arrival_sec").shift(-1).over("trip_id"),
-    ).with_columns(travel_time_sec=pl.col("arrival_next_sec") - pl.col("arrival_sec"))
-
-    df = df.with_columns(
-        hour_of_day=((pl.col("arrival_sec") / 3600).floor().cast(pl.Int64) % 24),
-    )
-    df = df.with_columns(
-        stop_position_pct=pl.col("stop_sequence").cast(pl.Float64)
-        / pl.col("total_stops"),
-    )
-    return df.with_columns(
-        speed_est_mps=pl.col("distance_to_next_m") / pl.col("travel_time_sec"),
+    return (
+        df.lazy()
+        .with_columns(total_stops=pl.len().over("trip_id"))
+        .with_columns(
+            pl.col("stop_lat").shift(-1).over("trip_id").alias("lat_next"),
+            pl.col("stop_lon").shift(-1).over("trip_id").alias("lon_next"),
+        )
+        .with_columns(lat_mid=(pl.col("stop_lat") + pl.col("lat_next")) / 2)
+        .with_columns(
+            dx=(pl.col("lon_next") - pl.col("stop_lon"))
+            * 111320
+            * pl.col("lat_mid").radians().cos(),
+            dy=(pl.col("lat_next") - pl.col("stop_lat")) * 111320,
+        )
+        .with_columns(
+            distance_to_next_m=(pl.col("dx") ** 2 + pl.col("dy") ** 2).sqrt()
+        )
+        .with_columns(arrival_sec=_time_to_sec(pl.col("arrival_time")))
+        .with_columns(
+            arrival_next_sec=pl.col("arrival_sec").shift(-1).over("trip_id"),
+        )
+        .with_columns(
+            travel_time_sec=pl.col("arrival_next_sec") - pl.col("arrival_sec")
+        )
+        .with_columns(
+            hour_of_day=((pl.col("arrival_sec") / 3600).floor().cast(pl.Int64) % 24),
+        )
+        .with_columns(
+            stop_position_pct=pl.col("stop_sequence").cast(pl.Float64)
+            / pl.col("total_stops"),
+        )
+        .with_columns(
+            speed_est_mps=pl.col("distance_to_next_m") / pl.col("travel_time_sec"),
+        )
+        .collect()
     )
 
 
@@ -134,4 +139,3 @@ def main(**kwargs):
     logger.info("Features: %s", FEATURE_COLS)
 
     _upload_to_minio(run_id, df_out)
-
