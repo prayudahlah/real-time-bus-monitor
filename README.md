@@ -31,7 +31,6 @@ Pipeline dikembangkan dalam 2 sub-sistem independen:
   - [Services](#batch-services)
   - [Alur Batch](#alur-batch)
   - [DDL PostgreSQL](#ddl-postgresql)
-  - [CDC Bridge (Debezium)](#cdc-bridge-debezium)
 - [Stream Pipeline](#stream-pipeline)
   - [Services](#stream-services)
   - [Alur Stream](#alur-stream)
@@ -99,12 +98,6 @@ real-time-bus-monitor/
 │   ├── mlflow/
 │   │   └── Dockerfile
 │   │
-│   ├── debezium-connect/
-│   │   ├── connectors/
-│   │   │   └── debezium-source.json
-│   │   └── scripts/
-│   │       └── register_connector.sh
-│   │
 │   ├── notebooks/
 │   │   └── 01-feature-eda.ipynb
 │   │
@@ -143,11 +136,6 @@ real-time-bus-monitor/
     │   │   ├── Dockerfile
     │   │   └── requirements.txt
     │   │
-    │   └── cdc-consumer/           # CDC consumer placeholder
-    │       ├── app.py
-    │       ├── Dockerfile
-    │       └── requirements.txt
-    │
     └── postgres/init/
         └── 01-init-tables.sql
 ```
@@ -214,21 +202,6 @@ stop_times (trip_id FK→trips, arrival_time, departure_time, stop_id FK→stops
 **Database `airflow`** — metadata Airflow (auto-managed).
 **Database `mlflow`** — metadata MLflow (auto-managed).
 
-### CDC Bridge (Debezium)
-
-Menghubungkan batch PostgreSQL ke stream Kafka:
-
-| Field | Value |
-|---|---|
-| Connector | `batch-pg-connector` |
-| Source | `postgres-batch:5432/batch_data` |
-| Tables | `public.routes`, `public.stops`, `public.trips`, `public.stop_times` |
-| Kafka topic prefix | `cdc` (topics: `cdc.public.routes`, dll.) |
-| Decoding plugin | `pgoutput` |
-| Replication slot | `debezium_slot` |
-
-Setiap INSERT/UPDATE/DELETE di batch PostgreSQL → otomatis dipublikasikan ke Kafka sebagai JSON.
-
 ---
 
 ## Stream Pipeline
@@ -245,7 +218,6 @@ Setiap INSERT/UPDATE/DELETE di batch PostgreSQL → otomatis dipublikasikan ke K
 | `inference` | `stream-inference` | FastAPI: nearest stop lookup, ETA, anomaly detection |
 | `alert-telegram` | `stream-alert-telegram` | Consumer Kafka: service alerts → Telegram |
 | `dashboard` | `stream-dashboard` | Streamlit dashboard (placeholder) |
-| `cdc-consumer` | `stream-cdc-consumer` | CDC consumer (placeholder, profile: `cdc`) |
 
 ### Alur Stream
 

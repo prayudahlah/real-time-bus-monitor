@@ -8,4 +8,5 @@ pytest
 pytest-mock
 requests
 scikit-learn
+soda-core~=3.5.0
 soda-core-postgres~=3.5.0
