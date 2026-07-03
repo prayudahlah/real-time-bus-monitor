@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta
 
 import requests
@@ -31,7 +32,8 @@ def _send_telegram(context, status, icon):
     dag_id = context["dag"].dag_id
     task_id = context["task"].task_id
     run_id = context["run_id"]
-    log_url = context["task_instance"].log_url
+    base_url = os.environ.get("AIRFLOW_BASE_URL", "http://localhost:8080")
+    log_url = re.sub(r"^https?://[^/]+", base_url.rstrip("/"), context["task_instance"].log_url)
 
     text = (
         f"{icon} Pipeline {status}\n"
