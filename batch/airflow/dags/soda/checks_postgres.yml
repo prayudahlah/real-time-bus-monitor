@@ -24,6 +24,7 @@ checks for trips:
   - missing_count(route_id) = 0
   - missing_count(service_id) = 0
   - duplicate_count(trip_id) = 0
+  - values in (route_id) must exist in routes (route_id)
 
 checks for stop_times:
   - row_count > 500000
@@ -32,10 +33,13 @@ checks for stop_times:
   - missing_count(arrival_time) = 0
   - missing_count(departure_time) = 0
   - missing_count(stop_sequence) = 0
+  - values in (trip_id) must exist in trips (trip_id)
+  - values in (stop_id) must exist in stops (stop_id)
 
 checks for calendar:
   - row_count > 10
   - missing_count(service_id) = 0
+  - missing_count(monday) = 0
   - duplicate_count(service_id) = 0
   - invalid_count(monday) = 0:
       valid min: 0
