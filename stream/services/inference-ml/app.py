@@ -70,18 +70,14 @@ def kafka_consumer_loop():
             consumer = KafkaConsumer(
                 'bus.raw.vehicle_positions',
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-                group_id='inference-ml',
                 auto_offset_reset='latest',
                 enable_auto_commit=True,
                 value_deserializer=lambda m: json.loads(m.decode('utf-8'))
             )
             logger.info("Connected to Kafka, consuming bus.raw.vehicle_positions")
-            while True:
-                records = consumer.poll(timeout_ms=1000)
-                for tp, msgs in records.items():
-                    for msg in msgs:
-                        KAFKA_MESSAGES.inc()
-                        process_bus_position(msg.value)
+            for msg in consumer:
+                KAFKA_MESSAGES.inc()
+                process_bus_position(msg.value)
         except Exception as e:
             logger.warning(f"Kafka consumer error: {e}, retrying in 5s...")
             time.sleep(5)

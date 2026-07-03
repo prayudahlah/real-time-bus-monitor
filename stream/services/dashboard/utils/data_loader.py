@@ -99,6 +99,8 @@ def _mock_bus_positions():
             "lon": -77.03 + rng.uniform(-0.04, 0.04),
             "speed": round(rng.uniform(0, 15), 1),
             "predicted_travel_time_sec": round(rng.uniform(120, 900), 1),
+            "nearest_stop_id": f"STOP_{10001 + (i % 20)}",
+            "next_stop_id": f"STOP_{10002 + (i % 20)}",
             "status": status,
             "created_at": now - timedelta(seconds=age),
         })
@@ -171,7 +173,8 @@ def _mock_predictions():
 @st.cache_data(ttl=15, show_spinner="Memuat posisi bus...")
 def load_bus_positions():
     sql = """SELECT bus_id, route_id, lat, lon, speed,
-                    predicted_travel_time_sec, created_at
+                    predicted_travel_time_sec, created_at,
+                    nearest_stop_id, next_stop_id
              FROM {catalog}.public.predictions_ml_log
              ORDER BY created_at DESC LIMIT 5000"""
     df = _try_query(sql)
@@ -190,20 +193,25 @@ def load_bus_positions():
 
 @st.cache_data(ttl=3600, show_spinner="Memuat data route...")
 def load_route_descriptions():
-    sql = """SELECT route_short_name, route_long_name
+    sql = """SELECT route_id, route_short_name, route_long_name
              FROM {catalog}.public.routes
              ORDER BY route_short_name"""
     df = _try_query(sql, use_batch=True)
     if df is None or df.empty:
         df = _try_query(sql)
     if df is not None and not df.empty:
-        result = {}
+        display = {}
+        mapping = {}
         for _, row in df.iterrows():
-            short = str(row["route_short_name"]).strip()
+            rid = str(row["route_id"]).strip()
+            short = str(row["route_short_name"]).strip() if row["route_short_name"] else rid
             long_ = str(row["route_long_name"]).strip() if row["route_long_name"] else ""
-            result[short] = f"{short}: {long_}" if long_ else short
-        return result
-    return {k: f"{k}: {v}" for k, v in MOCK_ROUTE_NAMES.items()}
+            label = f"{short}: {long_}" if long_ else short
+            display[short] = label
+            mapping[rid] = label
+        return display, mapping
+    mock_display = {k: f"{k}: {v}" for k, v in MOCK_ROUTE_NAMES.items()}
+    return mock_display, mock_display
 
 
 @st.cache_data(ttl=3600, show_spinner="Memuat jadwal...")
@@ -299,6 +307,14 @@ def load_stops():
         logger.info(f"Loaded {len(df):,} stops from PostGIS")
         return df
     return pd.DataFrame()
+
+
+@st.cache_data(ttl=86400)
+def load_stop_names():
+    df = load_stops()
+    if not df.empty:
+        return dict(zip(df["stop_id"], df["stop_name"]))
+    return {}
 
 
 @st.cache_data(ttl=86400, show_spinner="Memuat jalur rute...")

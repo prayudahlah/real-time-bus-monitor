@@ -113,6 +113,24 @@ services:
       TRINO_HOST: trino
       TRINO_PORT: 8080
       REFRESH_SEC: 30
+    develop:
+      watch:
+        - action: sync
+          path: ./services/dashboard/app.py
+          target: /app/app.py
+        - action: sync
+          path: ./services/dashboard/pages
+          target: /app/pages
+        - action: sync
+          path: ./services/dashboard/utils
+          target: /app/utils
+        - action: sync
+          path: ./services/dashboard/.streamlit
+          target: /app/.streamlit
+        - action: rebuild
+          path: ./services/dashboard/requirements.txt
+        - action: rebuild
+          path: ./services/dashboard/Dockerfile
 
   inference-ml:
     build:
@@ -205,6 +223,7 @@ services:
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      BATCH_TAILSCALE_IP: ${BATCH_TAILSCALE_IP}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       TELEGRAM_INFRA_TOPIC_ID: ${TELEGRAM_INFRA_TOPIC_ID}

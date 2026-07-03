@@ -324,6 +324,24 @@ services:
       TRINO_HOST: trino
       TRINO_PORT: 8080
       REFRESH_SEC: 30
+    develop:
+      watch:
+        - action: sync
+          path: ./stream/services/dashboard/app.py
+          target: /app/app.py
+        - action: sync
+          path: ./stream/services/dashboard/pages
+          target: /app/pages
+        - action: sync
+          path: ./stream/services/dashboard/utils
+          target: /app/utils
+        - action: sync
+          path: ./stream/services/dashboard/.streamlit
+          target: /app/.streamlit
+        - action: rebuild
+          path: ./stream/services/dashboard/requirements.txt
+        - action: rebuild
+          path: ./stream/services/dashboard/Dockerfile
 
   # ============================================
   # Trino — Federated Query Engine

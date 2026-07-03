@@ -3,24 +3,13 @@
   "version": 2,
   "timezone": "browser",
   "schemaVersion": 39,
-  "templating": {
-    "list": [
-      {
-        "name": "ds",
-        "type": "datasource",
-        "query": "prometheus",
-        "label": "Data Source",
-        "current": {}
-      }
-    ]
-  },
   "panels": [
     {
       "title": "Model Status",
       "type": "stat",
       "gridPos": {"w": 4, "h": 4, "x": 0, "y": 0},
       "targets": [{"expr": "inference_model_loaded", "legendFormat": ""}],
-      "datasource": {"type": "prometheus", "uid": "${ds}"},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
           "unit": "none",
@@ -34,7 +23,7 @@
       "type": "stat",
       "gridPos": {"w": 4, "h": 4, "x": 4, "y": 0},
       "targets": [{"expr": "sum(inference_predictions_total)", "legendFormat": ""}],
-      "datasource": {"type": "prometheus", "uid": "${ds}"},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
           "unit": "none",
@@ -48,7 +37,7 @@
       "type": "stat",
       "gridPos": {"w": 4, "h": 4, "x": 8, "y": 0},
       "targets": [{"expr": "inference_stops_loaded", "legendFormat": ""}],
-      "datasource": {"type": "prometheus", "uid": "${ds}"},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
           "unit": "none",
@@ -62,7 +51,7 @@
       "type": "stat",
       "gridPos": {"w": 4, "h": 4, "x": 12, "y": 0},
       "targets": [{"expr": "inference_kafka_messages_consumed_total", "legendFormat": ""}],
-      "datasource": {"type": "prometheus", "uid": "${ds}"},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
           "unit": "none",
@@ -76,7 +65,7 @@
       "type": "stat",
       "gridPos": {"w": 4, "h": 4, "x": 16, "y": 0},
       "targets": [{"expr": "count(inference_predictions_total)", "legendFormat": ""}],
-      "datasource": {"type": "prometheus", "uid": "${ds}"},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
           "unit": "none",
@@ -90,7 +79,7 @@
       "type": "stat",
       "gridPos": {"w": 4, "h": 4, "x": 20, "y": 0},
       "targets": [{"expr": "time() - inference_last_prediction_timestamp", "legendFormat": ""}],
-      "datasource": {"type": "prometheus", "uid": "${ds}"},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -107,7 +96,7 @@
         "expr": "increase(inference_predictions_total[5m])",
         "legendFormat": "{{route_id}}"
       }],
-      "datasource": {"type": "prometheus", "uid": "${ds}"}
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     },
     {
       "title": "Errors per 5m",
@@ -117,7 +106,7 @@
         "expr": "increase(inference_errors_total[5m])",
         "legendFormat": "{{error_type}}"
       }],
-      "datasource": {"type": "prometheus", "uid": "${ds}"}
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     },
     {
       "title": "Prediction Latency (p95)",
@@ -127,7 +116,7 @@
         "expr": "histogram_quantile(0.95, sum(rate(inference_latency_seconds_bucket[5m])) by (le))",
         "legendFormat": "p95"
       }],
-      "datasource": {"type": "prometheus", "uid": "${ds}"}
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     },
     {
       "title": "Kafka Msgs per second",
@@ -137,7 +126,7 @@
         "expr": "rate(inference_kafka_messages_consumed_total[5m])",
         "legendFormat": "msgs/s"
       }],
-      "datasource": {"type": "prometheus", "uid": "${ds}"}
+      "datasource": {"type": "prometheus", "uid": "prometheus"}
     }
   ]
 }

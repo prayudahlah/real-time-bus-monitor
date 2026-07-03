@@ -14,3 +14,8 @@ scrape_configs:
   - job_name: kafka
     static_configs:
       - targets: ["kafka-exporter:9308"]
+
+  - job_name: inference-ml
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["inference-ml:8000"]
