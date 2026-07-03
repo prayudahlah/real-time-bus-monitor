@@ -1,0 +1,181 @@
+{
+  "title": "Data Quality Monitoring",
+  "uid": "data-quality",
+  "version": 4,
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "source",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus-batch" },
+        "query": "label_values(soda_check_result{check_name!=\"unknown\"}, data_source)",
+        "label": "Source",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "tbl",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus-batch" },
+        "query": "label_values(soda_check_result{check_name!=\"unknown\", data_source=~\"$source\"}, table)",
+        "label": "Table",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Overview",
+      "type": "row",
+      "gridPos": {"w": 24, "h": 1, "x": 0, "y": 0},
+      "collapsed": false
+    },
+    {
+      "id": 4,
+      "title": "Total Checks",
+      "type": "stat",
+      "gridPos": {"w": 12, "h": 5, "x": 0, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus-batch"},
+      "targets": [{"expr": "sum(soda_checks_passed) + sum(soda_checks_failed)", "legendFormat": ""}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {"mode": "background"},
+          "thresholds": {"steps": [{"color": "green", "value": null}]},
+          "sparkline": {"show": true}
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Pass Rate",
+      "type": "gauge",
+      "gridPos": {"w": 12, "h": 5, "x": 12, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus-batch"},
+      "targets": [
+        {"expr": "(sum(soda_checks_passed) / (sum(soda_checks_passed) + sum(soda_checks_failed))) * 100", "legendFormat": "Pass Rate"}
+      ],
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 80},
+              {"color": "green", "value": 95}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Check Results",
+      "type": "row",
+      "gridPos": {"w": 24, "h": 1, "x": 0, "y": 6},
+      "collapsed": false
+    },
+    {
+      "id": 5,
+      "title": "Individual Check Results",
+      "type": "table",
+      "gridPos": {"w": 24, "h": 10, "x": 0, "y": 7},
+      "datasource": {"type": "prometheus", "uid": "prometheus-batch"},
+      "targets": [{"expr": "soda_check_result{check_name!=\"unknown\", data_source=~\"${source:regex}\", table=~\"${tbl:regex}\"}", "legendFormat": "", "instant": true}],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {
+              "data_source": 0,
+              "table": 1,
+              "check_name": 2,
+              "Value": 3
+            },
+            "renameByName": {
+              "Value": "Result"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "align": "left",
+            "displayMode": "auto",
+            "cellOptions": {"type": "auto"}
+          },
+          "color": {"mode": "cell"},
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": -0.5},
+              {"color": "green", "value": 0.5}
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "data_source"},
+            "properties": [
+              {"id": "displayName", "value": "Data Source"},
+              {"id": "custom.width", "value": 140}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "table"},
+            "properties": [
+              {"id": "displayName", "value": "Table"},
+              {"id": "custom.width", "value": 120}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "check_name"},
+            "properties": [
+              {"id": "displayName", "value": "Check"},
+              {"id": "custom.width", "value": 450}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Value"},
+            "properties": [
+              {"id": "displayName", "value": "Result"},
+              {"id": "custom.width", "value": 100}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
