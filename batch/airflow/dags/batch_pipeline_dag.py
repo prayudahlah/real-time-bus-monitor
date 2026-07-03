@@ -19,7 +19,6 @@ from tasks.load_stops_to_postgis import main as load_stops_to_postgis
 from tasks.load_shapes_to_postgis import main as load_shapes_to_postgis
 from tasks.feature_eng import main as feature_eng
 from tasks.train import main as train
-from tasks.validate_data import main as validate_data
 from tasks.soda_scan import main as soda_scan
 
 def _send_telegram(context, status, icon):
@@ -150,11 +149,6 @@ with DAG(
             python_callable=load_shapes_to_postgis,
         )
 
-    validate_data_task = PythonOperator(
-        task_id="validate_data",
-        python_callable=validate_data,
-    )
-
     train_task = PythonOperator(
         task_id="train",
         python_callable=train,
@@ -174,7 +168,6 @@ with DAG(
         extract_task
         >> clear_tables_task
         >> [load_group, load_postgis_group]
-        >> validate_data_task
         >> soda_scan_task
         >> feature_eng_task
         >> train_task
